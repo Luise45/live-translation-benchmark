@@ -6,4 +6,7 @@ name = "live-translation-benchmark"
 version = "0.1.0"
 description = "Benchmark for live speech translation models"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "python-dotenv>=1.2.4",
+    "websockets>=17.3",
+]
