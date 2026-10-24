@@ -1,2 +1,9 @@
 # Python project and dependency configuration
 # e.g version = "0.1.0"
+
+[project]
+name = "live-translation-benchmark"
+version = "0.1.0"
+description = "Benchmark for live speech translation models"
+requires-python = ">=3.11"
+dependencies = []
