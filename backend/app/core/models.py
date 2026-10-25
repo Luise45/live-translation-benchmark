@@ -1,18 +1,25 @@
+
 """
-shared data models for the benchmark
-
-purpose:
-defines common data structures used across the benchmark, for example
-benchmark requests, results, latency values and errors
-
-used by:
-- API routes
-- benchmark runner
-- candidates
-- integrations when provider responses are converted into our common format
-
-does not contain:
-- provider-specific API responses
-- provider API calls
-- FE logic
+Gemeinsame Datenmodelle für den Benchmark.
 """
+
+from dataclasses import dataclass, field
+
+
+@dataclass
+class StageResult:
+    stage: str
+    model: str
+    output: str
+    latency_seconds: float
+    error: str | None = None
+
+
+@dataclass
+class BenchmarkResult:
+    input_audio: str
+    steps: list[StageResult] = field(default_factory=list)
+
+    @property
+    def total_latency_seconds(self) -> float:
+        return sum(step.latency_seconds for step in self.steps)

@@ -1,0 +1,19 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# IntelliJ
+.idea/
+
+# API-Keys
+.env
+.env.*
+!.env.example
+
+# Temporäre Testergebnisse
+deepgram-antwort.json
+elevenlabs-antwort.txt
+test.mp3
+uebersetzung.mp3

@@ -1,16 +1,31 @@
+
 """
-shared interfaces for all benchmark candidates.
-
-purpose:
-defines what every benchmark candidate must provide so the benchmark runner
-can use all candidates in the same way.
-
-used by:
-- benchmark/runner.py
-- candidate implementations
-
-does not contain:
-- provider API calls
-- provider-specific response formats
-- benchmark scoring
+Einheitliche Schnittstellen für alle Modellkandidaten.
 """
+
+from typing import Protocol
+
+from backend.app.core.models import StageResult
+
+
+class STTCandidate(Protocol):
+    name: str
+
+    def transcribe(self, wav_path: str) -> StageResult:
+        ...
+
+
+class TranslationCandidate(Protocol):
+    name: str
+
+    def translate(self, text: str) -> StageResult:
+        ...
+
+
+class TTSCandidate(Protocol):
+    name: str
+
+    def synthesize(
+        self, text: str, output_path: str
+    ) -> StageResult:
+        ...
