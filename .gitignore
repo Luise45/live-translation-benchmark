@@ -17,3 +17,9 @@ deepgram-antwort.json
 elevenlabs-antwort.txt
 test.mp3
 uebersetzung.mp3
+
+# Lokale Benchmark-Ergebnisse
+results/
+
+# Lokale Prototypen mit Zugangsdaten
+prototypes/
