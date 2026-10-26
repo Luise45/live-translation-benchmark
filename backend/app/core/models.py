@@ -16,3 +16,22 @@ does not contain:
 - provider API calls
 - FE logic
 """
+
+"""
+Beispiel erstmal für das Walking Skeleton
+"""
+from dataclasses import dataclass
+
+@dataclass
+class TranslationResult:
+    provider: str
+    architecture: str
+    source_language: str
+    target_language: str
+
+    source_transcript: str | None
+    translated_transcript: str | None
+    translated_audio: bytes
+
+    time_to_first_audio_ms: float | None
+    total_processing_time_ms: float
