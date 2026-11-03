@@ -5,12 +5,15 @@ import os
 import shutil
 import subprocess
 import time
+
 from dataclasses import asdict
 from pathlib import Path
 
 from backend.app.candidates.c_deepgram import DeepgramSTT
 from backend.app.core.models import BenchmarkResult, StageResult
-from backend.app.integrations.i_mymemory import translate_text
+from backend.app.integrations.i_deepl import (
+    translate_text as translate_text_deepl
+)
 from backend.app.integrations.i_elevenlabs import synthesize_mp3
 
 
@@ -21,18 +24,23 @@ STT_MODELS = {
 }
 
 TRANSLATION_MODELS = {
-    "mymemory": translate_text
+    "deepl": translate_text_deepl
 }
 
 TTS_MODELS = {
     "elevenlabs": synthesize_mp3
 }
 
+# Genaue Modellversionen für die Benchmark-Ergebnisse
+TTS_MODEL_IDS = {
+    "elevenlabs": "eleven_flash_v2_5"
+}
+
 
 def run_cascade(
     audio_path: str,
     stt_model: str = "deepgram",
-    translation_model: str = "mymemory",
+    translation_model: str = "deepl",
     tts_model: str = "elevenlabs"
 ):
     """Führt die vollständige Übersetzungskaskade aus."""
@@ -40,23 +48,42 @@ def run_cascade(
     audio = Path(audio_path)
 
     if not audio.is_file():
-        raise FileNotFoundError(f"Audiodatei fehlt: {audio}")
+        raise FileNotFoundError(
+            f"Audiodatei fehlt: {audio}"
+        )
 
-    # API-Schlüssel für die bisherige Kombination prüfen
-    for key in ("DEEPGRAM_API_KEY", "ELEVEN_API_KEY", "VOICE_ID"):
+    # Benötigte API-Schlüssel prüfen
+    for key in (
+        "DEEPGRAM_API_KEY",
+        "DEEPL_API_KEY",
+        "ELEVEN_API_KEY",
+        "VOICE_ID"
+    ):
         if not os.getenv(key):
-            raise RuntimeError(f"Umgebungsvariable fehlt: {key}")
+            raise RuntimeError(
+                f"Umgebungsvariable fehlt: {key}"
+            )
 
+    # Ordner für Ergebnisse erstellen
     output_dir = Path("results/cascade")
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    benchmark = BenchmarkResult(input_audio=str(audio))
+    benchmark = BenchmarkResult(
+        input_audio=str(audio)
+    )
+
     total_start = time.perf_counter()
 
-    # 1. Speech-to-Text
+    # ---------------------------------------
+    # 1. Speech-to-Text mit Deepgram Nova-3
+    # ---------------------------------------
+
     print(f"\n1. {stt_model} transkribiert ...")
 
-    stt_result = STT_MODELS[stt_model]().transcribe(str(audio))
+    stt_result = STT_MODELS[stt_model]().transcribe(
+        str(audio)
+    )
+
     benchmark.steps.append(stt_result)
 
     german_text = stt_result.output
@@ -68,7 +95,10 @@ def run_cascade(
 
     print("Deutsch:", german_text)
 
-    # 2. Translation
+    # ---------------------------------------
+    # 2. Machine Translation mit DeepL
+    # ---------------------------------------
+
     print(f"\n2. {translation_model} übersetzt ...")
 
     start = time.perf_counter()
@@ -79,19 +109,32 @@ def run_cascade(
 
     translation_latency = time.perf_counter() - start
 
-    benchmark.steps.append(StageResult(
-        stage="translation",
-        model=translation_model,
-        output=english_text,
-        latency_seconds=translation_latency
-    ))
+    if not english_text.strip():
+        raise RuntimeError(
+            f"{translation_model} hat keinen Text übersetzt."
+        )
+
+    benchmark.steps.append(
+        StageResult(
+            stage="translation",
+            model=translation_model,
+            output=english_text,
+            latency_seconds=translation_latency
+        )
+    )
 
     print("Englisch:", english_text)
 
-    # 3. Text-to-Speech
+    # ---------------------------------------
+    # 3. Text-to-Speech mit ElevenLabs Flash v2.5
+    # ---------------------------------------
+
     print(f"\n3. {tts_model} erzeugt Audio ...")
 
     mp3_path = output_dir / "uebersetzung.mp3"
+
+    # Genaue Modellversion bestimmen
+    tts_model_id = TTS_MODEL_IDS[tts_model]
 
     start = time.perf_counter()
 
@@ -102,14 +145,19 @@ def run_cascade(
 
     tts_latency = time.perf_counter() - start
 
-    benchmark.steps.append(StageResult(
-        stage="tts",
-        model=tts_model,
-        output=str(mp3_path),
-        latency_seconds=tts_latency
-    ))
+    benchmark.steps.append(
+        StageResult(
+            stage="tts",
+            model=tts_model_id,
+            output=str(mp3_path),
+            latency_seconds=tts_latency
+        )
+    )
 
-    # 4. Optional: MP3 auf dem Mac in WAV umwandeln
+    # ---------------------------------------
+    # 4. Optional: MP3 in WAV umwandeln
+    # ---------------------------------------
+
     wav_path = output_dir / "uebersetzung.wav"
     wav_created = False
     conversion_latency = None
@@ -134,7 +182,10 @@ def run_cascade(
                 text=True
             )
 
-            conversion_latency = time.perf_counter() - start
+            conversion_latency = (
+                time.perf_counter() - start
+            )
+
             wav_created = True
 
         except subprocess.CalledProcessError as error:
@@ -145,18 +196,28 @@ def run_cascade(
 
     total_latency = time.perf_counter() - total_start
 
-    # 5. Ergebnisse speichern
+    # ---------------------------------------
+    # 5. Benchmark-Ergebnisse speichern
+    # ---------------------------------------
+
     result_data = {
         "input_audio": str(audio),
         "stt_model": stt_model,
         "translation_model": translation_model,
         "tts_model": tts_model,
+        "tts_model_id": tts_model_id,
         "original_transcript": german_text,
         "translated_transcript": english_text,
         "audio_mp3": str(mp3_path),
-        "audio_wav": str(wav_path) if wav_created else None,
-        "steps": [asdict(step) for step in benchmark.steps],
-        "pipeline_latency_seconds": benchmark.total_latency_seconds,
+        "audio_wav": (
+            str(wav_path) if wav_created else None
+        ),
+        "steps": [
+            asdict(step) for step in benchmark.steps
+        ],
+        "pipeline_latency_seconds": (
+            benchmark.total_latency_seconds
+        ),
         "wav_conversion_seconds": conversion_latency,
         "end_to_end_seconds": total_latency
     }
@@ -172,16 +233,20 @@ def run_cascade(
         encoding="utf-8"
     )
 
-    # 6. Ergebnisse anzeigen
+    # ---------------------------------------
+    # 6. Benchmark-Ergebnisse anzeigen
+    # ---------------------------------------
+
     print("\n=== BENCHMARK-ERGEBNIS ===")
 
     for step in benchmark.steps:
         print(
-            f"{step.stage}: "
+            f"{step.stage} ({step.model}): "
             f"{step.latency_seconds:.3f} s"
         )
 
     print(f"Gesamtdauer: {total_latency:.3f} s")
+
     print(f"JSON: {json_path}")
     print(f"MP3: {mp3_path}")
 
@@ -190,6 +255,10 @@ def run_cascade(
 
     return result_data
 
+
+# ---------------------------------------
+# 7. Kommandozeilenargumente
+# ---------------------------------------
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -210,7 +279,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--translation",
         choices=list(TRANSLATION_MODELS.keys()),
-        default="mymemory"
+        default="deepl"
     )
 
     parser.add_argument(
