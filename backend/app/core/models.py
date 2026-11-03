@@ -35,3 +35,4 @@ class TranslationResult:
 
     time_to_first_audio_ms: float | None
     total_processing_time_ms: float
+    
