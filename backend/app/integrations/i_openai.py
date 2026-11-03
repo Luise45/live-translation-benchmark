@@ -19,6 +19,8 @@ from pathlib import Path
 
 import websocket
 from dotenv import load_dotenv
+import numpy as np
+
 
 # Verbindung herstellen und Audio zerlegen. Audiomesswerte pro Sekunde unf Messwerte pro Nachricht. Wss für WebSocket Secure Verbindung. 
 URL = "wss://api.openai.com/v1/realtime/translations?model=gpt-realtime-translate"
