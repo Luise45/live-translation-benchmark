@@ -14,7 +14,7 @@ Dieses Dokument beschreibt den gemeinsamen Git- und GitHub-Workflow für das Pro
 
 ## Branch-Namen
 
-für Jira-Tickets und Subtasks:
+für Jira-Tickets und Subtasks (kurze beschreibung optional):
 
 `<type>/<JIRA-ID>-<kurze-beschreibung>`
 
