@@ -5,6 +5,14 @@ Integration für OpenAI Realtime API für Übersetzungen
 braucht: pip install websocket-client numpy python-dotenv
 
 Wav --> zu --> Wav Übersetzung
+
+Quellen und Hilfe für den Code:
+
+https://developers.openai.com/api/docs/guides/voice-websockets?api=realtime&connection-example=python
+https://developers.openai.com/api/docs/guides/realtime-conversations#handling-audio-with-websockets
+https://github.com/KhalidAbdelaty/gpt-realtime-api/blob/main/test2_translation.py
+https://developers.openai.com/api/docs/guides/realtime-translation#close-a-websocket-session
+
 '''
 
 

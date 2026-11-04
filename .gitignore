@@ -12,3 +12,5 @@ __pycache__/
 results/
 translated.transcripts.json
 translated.wav
+
+test.py 
