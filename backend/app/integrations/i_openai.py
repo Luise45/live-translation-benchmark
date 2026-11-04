@@ -5,7 +5,6 @@ Integration für OpenAI Realtime API für Übersetzungen
 braucht: pip install websocket-client numpy python-dotenv
 
 Wav --> zu --> Wav Übersetzung
-
 Quellen und Hilfe für den Code:
 
 https://developers.openai.com/api/docs/guides/voice-websockets?api=realtime&connection-example=python
@@ -72,10 +71,11 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
     if not api_key:
         raise ValueError("Set OPENAI_API_KEY in .env")
 
+    # Vorbereitungen für das spätere Senden und Empfangen. Die Aufgaben sind: Stoppsignal für threads, Fehler sammenl, Platzhalter für den kommenden Sender-Thread.
     stop = threading.Event()
     sender_errors = []
     sender = None
-    # übersetzter text, erkannter Orginaltext und übersetzt Audiodaten werden gesammelt. 
+    # Aufgabe später: übersetzter text, erkannter Orginaltext und übersetzt Audiodaten werden gesammelt. 
     transcript = []
     source_transcript = []
     audio_chunks = []
@@ -83,7 +83,7 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
     ws = websocket.create_connection(
         URL, header=[f"Authorization: Bearer {api_key}"], timeout=60,
     )
-# - Funktion sendet Datei- 
+# - Funktion organisiert den Vorgang des Sendens. Audio_send sendet dan die Datei.-
     def send_audio():
         try:
             with wave.open(str(audio_path), "rb") as audio:
@@ -99,6 +99,7 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
                     }))
                     # berechnet Dauer des Audiostücks
                     deadline += len(chunk) / (SAMPLE_RATE * 2)
+                    # Lesend und senden - verbleibende Wartezeit. 
                     if stop.wait(max(0, deadline - time.perf_counter())):
                         return
             if not stop.is_set():

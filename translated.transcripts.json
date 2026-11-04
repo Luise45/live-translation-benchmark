@@ -1,6 +1,6 @@
 {
   "input_file": "testdata\\de_Kunde_001_test-mono-24k.wav",
   "target_language": "en",
-  "source_transcript": " Guten Tag, äh ich habe eine Frage zu meinem Vertrag. Meine Vertragsnummer ist vier acht zwei sieben drei neun eins. Und ich möchte wissen, ob meine Rechnung über ähm 129 Euro 50 äh bereits bezahlt wurde",
-  "translated_transcript": "Hello, I have a questionabout my contract. My contract number is4827391, and I'd like to know whether my bill for one hundred twenty-eight euros fiftyhas already been paid."
+  "source_transcript": " Guten Tag, äh ich habe eine Frage zu meinem Vertrag. Meine Vertragsnummer ist vier acht zwei sieben drei neun eins. And ich möchte wissen, ob meine Rechnung über ähm 129,50 Euro äh bereits bezahlt wurde",
+  "translated_transcript": "Good afternoon, I have a questionabout my contract. My contract number isfour eight two seven three nine one. And I'd like to know whether my invoice, um, for 128 euros fifty, has already been paid."
 }
