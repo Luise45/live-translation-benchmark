@@ -1,2 +1,10 @@
-# Python project and dependency configuration
-# e.g version = "0.1.0"
+[project]
+name = "live-translation-benchmark-backend"
+version = "0.1.0"
+description = "Backend für den Live-Translation-Benchmark"
+requires-python = ">=3.10"
+
+dependencies = [
+    "deepl>=1.0,<2.0",
+    "websocket-client>=1.9,<2.0",
+]
