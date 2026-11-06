@@ -1,4 +1,16 @@
+# Secrets
 .env
-/results
+.env.*
+!.env.example
+
+# Python
+.venv/
 __pycache__/
-test.py
+*.pyc
+
+# Generated results
+results/
+translated.transcripts.json
+translated.wav
+
+test.py 
