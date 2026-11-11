@@ -118,8 +118,11 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
             }},
         }))
         wait_for(ws, "session.updated")
-
+        events = []          
+        t_start = None
+        t_start = time.perf_counter()
         sender = threading.Thread(target=send_audio, daemon=True)
+        
         sender.start()
         while True:
             event = receive(ws)
@@ -129,6 +132,7 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
                         or event.get("format", "pcm16") != "pcm16"):
                     raise RuntimeError("Received unexpected audio format")
                 audio_chunks.append(base64.b64decode(event["delta"], validate=True))
+                events.append((now, "audio", None))
             elif event["type"] == "session.input_transcript.delta":
                 source_transcript.append(event["delta"])
             elif event["type"] == "session.output_transcript.delta":
