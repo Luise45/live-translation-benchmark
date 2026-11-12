@@ -23,6 +23,7 @@ import threading
 import time
 import wave
 from pathlib import Path
+from concurrent.futures import ThreadPoolExecutor
 
 import websocket
 from dotenv import load_dotenv
@@ -169,6 +170,31 @@ ruft die Funktion translate auf und speichert die Transkripte in einer JSON Date
 Zeigt Texte und Speicherorte an.
 '''
 
+
+def translate_bidirectional(customer_audio: Path, agent_audio: Path,
+                            customer_lang="de", agent_lang="en",
+                            out_dir: Path = Path("out")):
+    out_dir.mkdir(exist_ok=True)
+    jobs = {
+        # customer speaks customer_lang -> translate into agent_lang
+        "customer_to_agent": (customer_audio, out_dir / "customer_translated.wav", agent_lang),
+        # agent speaks agent_lang -> translate into customer_lang
+        "agent_to_customer": (agent_audio, out_dir / "agent_translated.wav", customer_lang),
+    }
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = {name: pool.submit(translate, *args) for name, args in jobs.items()}
+        return {name: f.result() for name, f in futures.items()}  # re-raises errors
+
+def merged_transcript(results):
+    lines = []
+    for direction, speaker in (("customer_to_agent", "Customer"), ("agent_to_customer", "Agent")):
+        # time of first translated word = when the turn became readable
+        for t, kind, text in results[direction]["events"]:
+            if kind == "translation":
+                lines.append((t, speaker, text))
+    lines.sort()
+    return lines
+    
 def main():
     # Search from the script folder upwards, including backend/.env.
     for directory in (Path(__file__).resolve().parent, *Path(__file__).resolve().parents):
