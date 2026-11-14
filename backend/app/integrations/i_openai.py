@@ -164,39 +164,10 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
         # Gibt den Übersetzten Text und den Originaltext zurück.
     return "".join(source_transcript), "".join(transcript)
 
-'''
-sucht nach der env Datei, liest die Eingabedatei, die Ausgabedatei und die Zielsprache ein.
-ruft die Funktion translate auf und speichert die Transkripte in einer JSON Datei.
-Zeigt Texte und Speicherorte an.
-'''
 
-
-def translate_bidirectional(customer_audio: Path, agent_audio: Path,
-                            customer_lang="de", agent_lang="en",
-                            out_dir: Path = Path("out")):
-    out_dir.mkdir(exist_ok=True)
-    jobs = {
-        # customer speaks customer_lang -> translate into agent_lang
-        "customer_to_agent": (customer_audio, out_dir / "customer_translated.wav", agent_lang),
-        # agent speaks agent_lang -> translate into customer_lang
-        "agent_to_customer": (agent_audio, out_dir / "agent_translated.wav", customer_lang),
-    }
-    with ThreadPoolExecutor(max_workers=2) as pool:
-        futures = {name: pool.submit(translate, *args) for name, args in jobs.items()}
-        return {name: f.result() for name, f in futures.items()}  # re-raises errors
-
-def merged_transcript(results):
-    lines = []
-    for direction, speaker in (("customer_to_agent", "Customer"), ("agent_to_customer", "Agent")):
-        # time of first translated word = when the turn became readable
-        for t, kind, text in results[direction]["events"]:
-            if kind == "translation":
-                lines.append((t, speaker, text))
-    lines.sort()
-    return lines
     
 def main():
-    # Search from the script folder upwards, including backend/.env.
+  
     for directory in (Path(__file__).resolve().parent, *Path(__file__).resolve().parents):
         if (directory / ".env").is_file():
             load_dotenv(directory / ".env")
@@ -206,23 +177,22 @@ def main():
     parser.add_argument("--target", default="en", help="Target language code (default: en)")
     parser.add_argument("--output", type=Path, default=Path("translated.wav"))
     args = parser.parse_args()
-    try:
-        # ruft Funktion translate auf
-        source, text = translate(args.input, args.output, args.target)
-        # schreibt die Ergebnisse in die json Datei ein und macht print der Ergebnisse auf die Konsole. 
-        transcript_path = args.output.with_suffix(".transcripts.json")
-        transcript_path.write_text(json.dumps({
-            "input_file": str(args.input),
-            "target_language": args.target,
-            "source_transcript": source,
-            "translated_transcript": text,
-        }, ensure_ascii=False, indent=2), encoding="utf-8")
-    except (OSError, ValueError, RuntimeError, wave.Error, websocket.WebSocketException) as exc:
-        parser.exit(1, f"Translation failed: {exc}\n")
-    print(f"Source: {source}")
-    print(f"Translation: {text}")
-    print(f"Audio saved to: {args.output.resolve()}")
-    print(f"Transcripts saved to: {transcript_path.resolve()}")
+    root = Path(__file__).resolve().parent
+
+
+    turns = [
+        ("customer", root / "audio" / "de_kunde_t1.m4a.wav", "de"),
+        ("agent", root / "audio" / "eng_sup_turn1.m4a.wav", "en"),
+        ("customer", root / "audio" / "de_kunde_t2.m4a.wav", "de"),
+        ("agent", root / "audio" / "eng_sup_t2.m4a.wav", "en"),
+    ]
+
+    results = translate_turns(turns, root / "out")
+
+    for turn in results:
+        print(f"\n{turn['turn']}. {turn['speaker']}")
+        print(f"Original: {turn['source_transcript']}")
+        print(f"Translation: {turn['translated_transcript']}")
 
 # wird beim Aufruf des Skripts/ Datei ausgeführt.
 if __name__ == "__main__":
