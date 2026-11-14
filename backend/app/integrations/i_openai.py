@@ -133,7 +133,7 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
                         or event.get("format", "pcm16") != "pcm16"):
                     raise RuntimeError("Received unexpected audio format")
                 audio_chunks.append(base64.b64decode(event["delta"], validate=True))
-                events.append((now, "audio", None))
+                
             elif event["type"] == "session.input_transcript.delta":
                 source_transcript.append(event["delta"])
             elif event["type"] == "session.output_transcript.delta":
@@ -164,7 +164,43 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
         # Gibt den Übersetzten Text und den Originaltext zurück.
     return "".join(source_transcript), "".join(transcript)
 
+'''
+sucht nach der env Datei, liest die Eingabedatei, die Ausgabedatei und die Zielsprache ein.
+ruft die Funktion translate auf und speichert die Transkripte in einer JSON Datei.
+Zeigt Texte und Speicherorte an.
+'''
 
+def translate_turns(turns, out_dir: Path):
+    out_dir.mkdir(parents=True, exist_ok=True)
+    results = []
+
+    for number, (speaker, audio_path, target_language) in enumerate(turns, 1):
+        output_path = out_dir / f"{number:03d}_{speaker}_{target_language}.wav"
+
+        print(f"Translating turn {number}: {speaker}")
+
+        source, translation = translate(
+            audio_path,
+            output_path,
+            target_language,
+        )
+
+        results.append({
+            "turn": number,
+            "speaker": speaker,
+            "input_file": str(audio_path),
+            "output_file": str(output_path),
+            "target_language": target_language,
+            "source_transcript": source,
+            "translated_transcript": translation,
+        })
+
+        (out_dir / "conversation.json").write_text(
+            json.dumps(results, ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+
+    return results
     
 def main():
   
@@ -172,19 +208,15 @@ def main():
         if (directory / ".env").is_file():
             load_dotenv(directory / ".env")
             break
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("input", type=Path, help="24 kHz mono PCM16 WAV recording")
-    parser.add_argument("--target", default="en", help="Target language code (default: en)")
-    parser.add_argument("--output", type=Path, default=Path("translated.wav"))
-    args = parser.parse_args()
+   
     root = Path(__file__).resolve().parent
 
 
     turns = [
-        ("customer", root / "audio" / "de_kunde_t1.m4a.wav", "de"),
-        ("agent", root / "audio" / "eng_sup_turn1.m4a.wav", "en"),
-        ("customer", root / "audio" / "de_kunde_t2.m4a.wav", "de"),
-        ("agent", root / "audio" / "eng_sup_t2.m4a.wav", "en"),
+        ("customer", root / "audio" / "de_kunde_t1_24k.wav", "de"),
+        ("agent", root / "audio" / "eng_sup_turn1_24k.wav", "en"),
+        ("customer", root / "audio" / "de_kunde_t2_24k.wav", "de"),
+        ("agent", root / "audio" / "eng_sup_t2_24k.wav", "en"),
     ]
 
     results = translate_turns(turns, root / "out")
