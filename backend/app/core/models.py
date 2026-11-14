@@ -35,4 +35,14 @@ class TranslationResult:
 
     time_to_first_audio_ms: float | None
     total_processing_time_ms: float
+
+@dataclass
+class CandidateResult(TranslationResult):
+    candidate: str
+    model: str
+    input_audio_duration_s: float
+    output_audio_duration_s: float
+    output_sample_rate: int
+    cost_usd: float
+    metadata: dict[str, object]
     
