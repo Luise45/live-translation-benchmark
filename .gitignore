@@ -30,3 +30,4 @@ translated.wav
 # Testdateien
 test.py 
 
+*.egg-info/
