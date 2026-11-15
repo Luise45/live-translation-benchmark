@@ -45,6 +45,7 @@ def to_mono(pcm_data: bytes, channels: int) -> bytes:
 def transcribe_streaming(
     audio_path: str,
     output_path: str = "results/streaming/deepgram_stt.json",
+    target_lang: str = "EN-US",
 ) -> dict:
     """Streamt eine WAV-Datei an Deepgram und speichert das Ergebnis."""
 
@@ -111,7 +112,7 @@ def transcribe_streaming(
 
     started = time.perf_counter()
 
-     # DeepL-Worker: Sprachabschnitte übersetzen
+    # DeepL-Worker: Sprachabschnitte übersetzen
     def translate_worker():
         """Übersetzt finale Sprachabschnitte mit DeepL."""
 
@@ -126,7 +127,7 @@ def transcribe_streaming(
 
                 translated_text = translate_text(
                     segment["text"],
-                    target_lang="EN-US",
+                    target_lang=target_lang,
                 )
 
                 translation_duration = (
@@ -202,7 +203,7 @@ def transcribe_streaming(
             sender_finished_at[0] = time.monotonic()
             sender_done.set()
 
-        # DeepL-Worker starten
+    # DeepL-Worker starten
     translator = threading.Thread(
         target=translate_worker,
         daemon=True,
@@ -355,11 +356,11 @@ def transcribe_streaming(
         "audio_duration_seconds": round(duration, 3),
         "chunk_ms": CHUNK_MS,
         "chunks_sent": stats["chunks_sent"],
-                "interim_results": interim_results,
+        "interim_results": interim_results,
         "final_results": final_results,
         "transcript": transcript,
         "translation_provider": "deepl",
-        "target_language": "EN-US",
+        "target_language": target_lang,
         "translation_results": translation_results,
         "translated_segments": len(translation_results),
         "total_elapsed_seconds": round(
@@ -396,10 +397,19 @@ def main():
         help="Pfad zur Ergebnisdatei",
     )
 
+    parser.add_argument(
+        "--target-lang",
+        default="EN-US",
+        help="DeepL-Zielsprache, z. B. EN-US, FR oder ES",
+    )
     args = parser.parse_args()
 
     try:
-        transcribe_streaming(args.audio, args.output)
+       transcribe_streaming(
+           args.audio,
+           args.output,
+           target_lang=args.target_lang,
+        )
     except (
         OSError,
         ValueError,
