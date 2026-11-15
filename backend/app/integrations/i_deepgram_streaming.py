@@ -99,6 +99,7 @@ def transcribe_streaming(
     sender_done = threading.Event()
     sender_errors = []
     sender_finished_at = [0.0]
+    audio_finished_at = [None]
 
     interim_results = []
     final_results = []
@@ -190,6 +191,10 @@ def transcribe_streaming(
 
                     ws.send_binary(chunk)
                     stats["chunks_sent"] += 1
+                    if frames_sent >= round(duration * sample_rate):
+                       audio_finished_at[0] = round(
+                           time.perf_counter() - started, 3
+                       )
 
             if not stop.is_set():
                 ws.send(json.dumps({"type": "CloseStream"}))
@@ -354,6 +359,7 @@ def transcribe_streaming(
         "stream_channels": 1,
         "sample_rate": sample_rate,
         "audio_duration_seconds": round(duration, 3),
+        "audio_finished_at_seconds": audio_finished_at[0],
         "chunk_ms": CHUNK_MS,
         "chunks_sent": stats["chunks_sent"],
         "interim_results": interim_results,
