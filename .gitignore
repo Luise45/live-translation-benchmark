@@ -1,3 +1,4 @@
+
 # Python
 __pycache__/
 *.pyc
@@ -7,7 +8,7 @@ venv/
 # IntelliJ
 .idea/
 
-# API-Keys
+# Secrets / API-Keys
 .env
 .env.*
 !.env.example
@@ -18,8 +19,14 @@ elevenlabs-antwort.txt
 test.mp3
 uebersetzung.mp3
 
-# Lokale Benchmark-Ergebnisse
-results/
-
 # Lokale Prototypen mit Zugangsdaten
 prototypes/
+
+# Generated results
+results/
+translated.transcripts.json
+translated.wav
+
+# Testdateien
+test.py 
+
