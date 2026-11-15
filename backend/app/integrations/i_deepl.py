@@ -18,7 +18,11 @@ def translate_text(
             "Umgebungsvariable fehlt: DEEPL_API_KEY"
         )
 
-    client = deepl.DeepLClient(api_key)
+    client = deepl.DeepLClient(
+        api_key,
+        timeout_s=10,
+        max_retries=0,
+    )
 
     result = client.translate_text(
         text,

@@ -320,15 +320,15 @@ def transcribe_streaming(
         ws.close()
         sender.join(timeout=5)
 
-        # Dem DeepL-Worker signalisieren,
-        # dass keine weiteren Abschnitte kommen
         translation_queue.put(None)
 
-        # Warten, bis alle Übersetzungen verarbeitet sind
-        translation_queue.join()
+        translator.join(timeout=30)
 
-        # Worker-Thread sauber beenden
-        translator.join()
+        if translator.is_alive():
+            raise TimeoutError(
+                "DeepL-Worker wurde nicht innerhalb "
+                "von 30 Sekunden beendet."
+            )
 
     if translation_errors:
         raise RuntimeError(
