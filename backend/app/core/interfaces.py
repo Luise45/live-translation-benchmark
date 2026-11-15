@@ -23,6 +23,10 @@ from .models import CandidateResult as CandidateResult
 
 class Candidate(Protocol):
     """Shared interface for benchmark candidates, including S2S and cascades."""
+    name: str
+    provider: str
+    architecture: str
+    
 
     def translate(
         self,
