@@ -33,7 +33,8 @@ from app.core.models import BenchmarkCase, BenchmarkConfig, RunRecord
 # eines Candidates nicht den Runner blockiert
 # TODO: später in candidates/registry.py auslagern, damit auch die API die Liste nutzen kann.
 CANDIDATES: dict[str, tuple[str, str]] = {
-    "openai_s2s": ("app.candidates.c_openai", "OpenAICandidate"),
+    "mock_s2s": ("app.candidates.c_mock", "MockCandidate"), #mock candidate zum testen ohne token
+    #"openai_s2s": ("app.candidates.c_openai", "OpenAICandidate"),
     #"soniox": ("app.candidates.c_soniox", "<KLASSENNAME>"),
 }
 
