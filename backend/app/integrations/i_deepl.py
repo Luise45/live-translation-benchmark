@@ -1,10 +1,17 @@
+
 import os
 
 import deepl
 
 
-def translate_text(text: str) -> str:
-    api_key = os.getenv("DEEPL_API_KEY")
+def translate_text(
+    text: str,
+    target_lang: str = "EN-US",
+    source_lang: str = "DE",
+) -> str:
+    """Übersetzt einen Text mit DeepL."""
+
+    api_key = (os.getenv("DEEPL_API_KEY") or "").strip()
 
     if not api_key:
         raise RuntimeError(
@@ -15,8 +22,9 @@ def translate_text(text: str) -> str:
 
     result = client.translate_text(
         text,
-        source_lang="DE",
-        target_lang="EN-US"
+        source_lang=source_lang,
+        target_lang=target_lang,
     )
 
     return result.text
+
