@@ -1,5 +1,6 @@
 
 import json
+import pytest
 import queue
 import time
 import wave
@@ -124,11 +125,15 @@ def test_streaming_provider_liefert_segmente(monkeypatch, tmp_path):
                 "alternatives": [{"transcript": text}]
             },
         }
-
+    
     messages = [
         make_result("Guten", False, 0.0, 0.1),
         make_result("Guten Tag", True, 0.0, 0.2),
         make_result("Wie geht es dir?", True, 0.2, 0.3),
+        {
+            "type": "Metadata",
+            "request_id": "test-request-123",
+        },
     ]
 
     class FakeWebSocket:
@@ -220,3 +225,38 @@ def test_streaming_provider_liefert_segmente(monkeypatch, tmp_path):
 
     assert b"".join(connection.sent_audio) == b"\x00\x00" * 160
     assert connection.closed
+
+    metadata = provider.metadata
+
+    assert metadata is not None
+    assert metadata.original_channels == 1
+    assert metadata.sample_rate == 16000
+    assert metadata.audio_duration_seconds == pytest.approx(0.01)
+    assert metadata.chunks_sent == 1
+    assert metadata.request_id == "test-request-123"
+
+    assert metadata.audio_finished_at_seconds is not None
+    assert 0 <= metadata.audio_finished_at_seconds <= elapsed
+
+def test_provider_setzt_alte_metadaten_zurueck(monkeypatch):
+    """Auch ein fehlgeschlagener Neustart entfernt alte Sitzungsdaten."""
+
+    provider = i_deepgram_streaming.DeepgramStreamingProvider()
+    provider.metadata = i_deepgram_streaming.DeepgramStreamMetadata(
+        original_channels=1,
+        sample_rate=16000,
+        audio_duration_seconds=1.0,
+        chunks_sent=10,
+        request_id="previous-request",
+    )
+
+    monkeypatch.delenv("DEEPGRAM_API_KEY", raising=False)
+
+    with pytest.raises(RuntimeError, match="DEEPGRAM_API_KEY"):
+        provider.stream(
+            "unused.wav",
+            on_segment=lambda segment: None,
+            started_at=time.perf_counter(),
+        )
+
+    assert provider.metadata is None
