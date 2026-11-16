@@ -15,13 +15,13 @@ import wave
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from queue import Queue
 from urllib.parse import urlencode
 
 import websocket
 
 from backend.app.core.models import STTSegment
-from backend.app.integrations.i_deepl import translate_text
+from backend.app.benchmark.streaming_cascade import run_streaming_cascade
+from backend.app.integrations.i_deepl import DeepLTranslationProvider
 
 
 DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen"
@@ -285,333 +285,123 @@ def transcribe_streaming(
     output_path: str = "results/streaming/deepgram_stt.json",
     target_lang: str = "EN-US",
 ) -> dict:
-    """Streamt eine WAV-Datei an Deepgram und speichert das Ergebnis."""
-
-    api_key = (os.getenv("DEEPGRAM_API_KEY") or "").strip()
-    if not api_key:
-        raise RuntimeError("DEEPGRAM_API_KEY ist nicht gesetzt.")
+    """Startet die Deepgram–DeepL-Kaskade und speichert das Ergebnis."""
 
     path = Path(audio_path)
     if not path.is_file():
         raise FileNotFoundError(f"Audiodatei fehlt: {path}")
 
-    # 1. Audioformat überprüfen
-    with wave.open(str(path), "rb") as audio:
-        channels = audio.getnchannels()
-        sample_rate = audio.getframerate()
-        sample_width = audio.getsampwidth()
-        compression = audio.getcomptype()
-        duration = audio.getnframes() / sample_rate
+    stt_provider = DeepgramStreamingProvider()
+    translation_provider = DeepLTranslationProvider()
 
-    if compression != "NONE" or sample_width != 2:
-        raise ValueError("Unterstützt wird nur unkomprimiertes PCM16-WAV.")
+    received_segments: list[STTSegment] = []
+    started_at = time.perf_counter()
 
-    if channels not in (1, 2):
-        raise ValueError("Die WAV-Datei muss Mono oder Stereo sein.")
-
-    # Rohe PCM16-Daten werden als Mono übertragen.
-    parameters = urlencode({
-        "model": "nova-3",
-        "language": "de",
-        "encoding": "linear16",
-        "sample_rate": sample_rate,
-        "channels": 1,
-        "interim_results": "true",
-        "endpointing": 300,
-        "smart_format": "true",
-    })
-
-    url = f"{DEEPGRAM_URL}?{parameters}"
-
-    # 2. WebSocket-Verbindung herstellen
-    print("Verbinde mit Deepgram ...")
-    ws = websocket.create_connection(
-        url,
-        header=[f"Authorization: Token {api_key}"],
-        timeout=10,
+    translated_segments = run_streaming_cascade(
+        str(path),
+        stt_provider=stt_provider,
+        translation_provider=translation_provider,
+        source_lang="DE",
+        target_lang=target_lang,
+        on_segment=received_segments.append,
+        started_at=started_at,
     )
-    ws.settimeout(1.0)
-    print("WebSocket verbunden.")
 
-    stop = threading.Event()
-    sender_done = threading.Event()
-    sender_errors = []
-    sender_finished_at = [0.0]
-    audio_finished_at = [None]
+    final_segments = [
+        segment
+        for segment in received_segments
+        if segment.is_final
+    ]
 
-    interim_results = []
-    final_results = []
-
-    translation_results = []
-    translation_errors = []
-    translation_queue = Queue()
-
-    metadata = {}
-    stats = {"chunks_sent": 0}
-
-    started = time.perf_counter()
-
-    def translate_worker():
-        """Übersetzt finale Sprachabschnitte mit DeepL."""
-
-        while True:
-            segment = translation_queue.get()
-
-            try:
-                if segment is None:
-                    break
-
-                translation_started = time.perf_counter()
-
-                translated_text = translate_text(
-                    segment["text"],
-                    target_lang=target_lang,
-                )
-
-                translation_duration = (
-                    time.perf_counter() - translation_started
-                )
-
-                translation_results.append({
-                    "segment_id": segment["segment_id"],
-                    "original_text": segment["text"],
-                    "translated_text": translated_text,
-                    "translation_seconds": round(
-                        translation_duration, 3
-                    ),
-                    "completed_at_seconds": round(
-                        time.perf_counter() - started, 3
-                    ),
-                })
-
-                print("[DEEPL]", translated_text)
-
-            except Exception as error:
-                translation_errors.append({
-                    "segment_id": segment["segment_id"],
-                    "error": str(error),
-                })
-                print("[DEEPL ERROR]", error)
-
-            finally:
-                translation_queue.task_done()
-
-    # 3. Audiodaten in Echtzeit senden
-    def send_audio():
-        try:
-            with wave.open(str(path), "rb") as audio:
-                frames_per_chunk = max(
-                    1, round(sample_rate * CHUNK_MS / 1000)
-                )
-                frames_sent = 0
-                send_started = time.perf_counter()
-
-                while not stop.is_set():
-                    raw_chunk = audio.readframes(frames_per_chunk)
-
-                    if not raw_chunk:
-                        break
-
-                    frame_count = len(raw_chunk) // (
-                        channels * sample_width
-                    )
-
-                    chunk = to_mono(raw_chunk, channels)
-
-                    # Übertragung im Tempo der Originalaufnahme
-                    frames_sent += frame_count
-                    deadline = send_started + frames_sent / sample_rate
-
-                    delay = max(0, deadline - time.perf_counter())
-                    if stop.wait(delay):
-                        return
-
-                    ws.send_binary(chunk)
-                    stats["chunks_sent"] += 1
-
-                    if frames_sent >= round(duration * sample_rate):
-                        audio_finished_at[0] = round(
-                            time.perf_counter() - started, 3
-                        )
-
-            if not stop.is_set():
-                ws.send(json.dumps({"type": "CloseStream"}))
-
-        except Exception as error:
-            sender_errors.append(error)
-            stop.set()
-            ws.close()
-
-        finally:
-            sender_finished_at[0] = time.monotonic()
-            sender_done.set()
-
-    # DeepL-Worker starten
-    translator = threading.Thread(
-        target=translate_worker,
-        daemon=True,
-    )
-    translator.start()
-
-    # Audioübertragung starten
-    sender = threading.Thread(target=send_audio, daemon=True)
-    sender.start()
-
-    # 4. Transkriptionsergebnisse gleichzeitig empfangen
-    try:
-        while True:
-            if sender_errors:
-                raise RuntimeError(
-                    "Audioübertragung fehlgeschlagen."
-                ) from sender_errors[0]
-
-            if (
-                sender_done.is_set()
-                and time.monotonic() - sender_finished_at[0]
-                > RECEIVE_TIMEOUT
-            ):
-                raise TimeoutError(
-                    "Deepgram hat die Streaming-Sitzung "
-                    "nicht rechtzeitig abgeschlossen."
-                )
-
-            try:
-                message = ws.recv()
-            except websocket.WebSocketTimeoutException:
-                continue
-            except websocket.WebSocketConnectionClosedException:
-                if not sender_done.is_set():
-                    raise RuntimeError(
-                        "WebSocket wurde während der "
-                        "Audioübertragung geschlossen."
-                    )
-                break
-
-            if not message:
-                if not sender_done.is_set():
-                    raise RuntimeError(
-                        "WebSocket wurde vorzeitig geschlossen."
-                    )
-                break
-
-            event = json.loads(message)
-            event_type = event.get("type")
-
-            if event_type == "Error":
-                raise RuntimeError(
-                    "Deepgram-API-Fehler: "
-                    + str(event.get("description", event))
-                )
-
-            if event_type == "Metadata":
-                metadata = event
-
-            if event_type != "Results":
-                continue
-
-            alternatives = event.get("channel", {}).get(
-                "alternatives", []
-            )
-
-            if not alternatives:
-                continue
-
-            text = alternatives[0].get("transcript", "").strip()
-
-            if not text:
-                continue
-
-            received_at = round(
-                time.perf_counter() - started, 3
-            )
-
-            if event.get("is_final", False):
-                segment_id = len(final_results) + 1
-
-                segment = {
-                    "segment_id": segment_id,
-                    "text": text,
-                    "start": event.get("start"),
-                    "duration": event.get("duration"),
-                    "speech_final": event.get("speech_final", False),
-                    "received_at_seconds": received_at,
-                }
-
-                final_results.append(segment)
-
-                # Abschnitt an den DeepL-Worker übergeben
-                translation_queue.put(segment)
-
-                print("[FINAL]", text)
-
-            else:
-                interim_results.append({
-                    "text": text,
-                    "received_at_seconds": received_at,
-                })
-                print("[INTERIM]", text)
-
-    finally:
-        stop.set()
-        ws.close()
-        sender.join(timeout=5)
-
-        translation_queue.put(None)
-
-        translator.join(timeout=30)
-
-        if translator.is_alive():
-            raise TimeoutError(
-                "DeepL-Worker wurde nicht innerhalb "
-                "von 30 Sekunden beendet."
-            )
-
-    if translation_errors:
-        raise RuntimeError(
-            f"DeepL-Übersetzung fehlgeschlagen: {translation_errors}"
-        )
-
-    if sender_errors:
-        raise RuntimeError(
-            "Audioübertragung fehlgeschlagen."
-        ) from sender_errors[0]
-
-    if not final_results:
+    if not final_segments:
         raise RuntimeError(
             "Keine finalen Transkriptionsergebnisse erhalten."
         )
 
-    # 5. Vollständiges Transkript zusammensetzen
+    metadata = stt_provider.metadata
+    if metadata is None:
+        raise RuntimeError(
+            "Deepgram hat keine Sitzungsmetadaten bereitgestellt."
+        )
+
+    # Das bisherige JSON-Format bleibt für bestehende Aufrufer erhalten.
+    interim_results = [
+        {
+            "text": segment.text,
+            "received_at_seconds": round(
+                segment.received_at_seconds, 3
+            ),
+        }
+        for segment in received_segments
+        if not segment.is_final
+    ]
+
+    final_results = [
+        {
+            "segment_id": segment.segment_id,
+            "text": segment.text,
+            "start": segment.start_seconds,
+            "duration": segment.duration_seconds,
+            "speech_final": segment.speech_final,
+            "received_at_seconds": round(
+                segment.received_at_seconds, 3
+            ),
+        }
+        for segment in final_segments
+    ]
+
+    translation_results = [
+        {
+            "segment_id": segment.source.segment_id,
+            "original_text": segment.source.text,
+            "translated_text": segment.text,
+            "translation_seconds": round(
+                segment.translation_seconds, 3
+            ),
+            "completed_at_seconds": round(
+                segment.completed_at_seconds, 3
+            ),
+        }
+        for segment in translated_segments
+    ]
+
     transcript = " ".join(
-        item["text"] for item in final_results
+        segment.text for segment in final_segments
     )
+
+    audio_finished_at = metadata.audio_finished_at_seconds
 
     result = {
         "input_audio": str(path),
-        "provider": "deepgram",
+        "provider": stt_provider.name,
         "model": "nova-3",
         "language": "de",
-        "original_channels": channels,
+        "original_channels": metadata.original_channels,
         "stream_channels": 1,
-        "sample_rate": sample_rate,
-        "audio_duration_seconds": round(duration, 3),
-        "audio_finished_at_seconds": audio_finished_at[0],
+        "sample_rate": metadata.sample_rate,
+        "audio_duration_seconds": round(
+            metadata.audio_duration_seconds, 3
+        ),
+        "audio_finished_at_seconds": (
+            round(audio_finished_at, 3)
+            if audio_finished_at is not None
+            else None
+        ),
         "chunk_ms": CHUNK_MS,
-        "chunks_sent": stats["chunks_sent"],
+        "chunks_sent": metadata.chunks_sent,
         "interim_results": interim_results,
         "final_results": final_results,
         "transcript": transcript,
-        "translation_provider": "deepl",
+        "translation_provider": translation_provider.name,
         "target_language": target_lang,
         "translation_results": translation_results,
         "translated_segments": len(translation_results),
         "total_elapsed_seconds": round(
-            time.perf_counter() - started, 3
+            time.perf_counter() - started_at, 3
         ),
-        "request_id": metadata.get("request_id"),
+        "request_id": metadata.request_id,
     }
 
-    # 6. Ergebnis als JSON speichern
     target = Path(output_path)
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(
@@ -626,7 +416,6 @@ def transcribe_streaming(
     print("JSON:", target)
 
     return result
-
 
 def main():
     parser = argparse.ArgumentParser(
