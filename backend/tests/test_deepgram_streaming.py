@@ -1,21 +1,19 @@
-
 import json
 import pytest
 import queue
 import time
 import wave
 
-from backend.app.integrations import i_deepgram_streaming
-
+from backend.app.integrations import i_deepgram_streaming, i_deepl
 
 def test_nur_finalisierte_abschnitte_uebersetzen(
     monkeypatch, tmp_path
 ):
-    """Nur finale Deepgram-Ergebnisse werden übersetzt."""
+    """Nur finale Deepgram-Ergebnisse werden mit DeepL übersetzt."""
 
     monkeypatch.setenv("DEEPGRAM_API_KEY", "test-key")
+    monkeypatch.setenv("DEEPL_API_KEY", "test-key")
 
-    # Kurze künstliche WAV-Datei erstellen
     audio_path = tmp_path / "test.wav"
 
     with wave.open(str(audio_path), "wb") as audio:
@@ -24,7 +22,6 @@ def test_nur_finalisierte_abschnitte_uebersetzen(
         audio.setframerate(16000)
         audio.writeframes(b"\x00\x00" * 3200)
 
-    # Simulierte Deepgram-Nachrichten
     messages = [
         {
             "type": "Results",
@@ -76,14 +73,25 @@ def test_nur_finalisierte_abschnitte_uebersetzen(
 
     translated_texts = []
 
-    def fake_translate(text, target_lang):
-        translated_texts.append(text)
-        return "Hello"
+    class FakeDeepLClient:
+        def __init__(self, api_key, **kwargs):
+            assert api_key == "test-key"
+
+        def translate_text(self, text, *, source_lang, target_lang):
+            assert source_lang == "DE"
+            assert target_lang == "EN-US"
+
+            translated_texts.append(text)
+
+            class Result:
+                text = "Hello"
+
+            return Result()
 
     monkeypatch.setattr(
-        i_deepgram_streaming,
-        "translate_text",
-        fake_translate,
+        i_deepl.deepl,
+        "DeepLClient",
+        FakeDeepLClient,
     )
 
     result = i_deepgram_streaming.transcribe_streaming(
@@ -94,7 +102,6 @@ def test_nur_finalisierte_abschnitte_uebersetzen(
 
     assert len(result["interim_results"]) == 1
     assert len(result["final_results"]) == 1
-
     assert translated_texts == ["Guten Tag"]
 
     assert result["translation_results"][0][
