@@ -1,4 +1,3 @@
-
 """
 Deepgram Nova-3 Streaming Speech-to-Text.
 
@@ -14,6 +13,7 @@ import threading
 import time
 import wave
 from collections.abc import Callable
+from dataclasses import dataclass
 from pathlib import Path
 from queue import Queue
 from urllib.parse import urlencode
@@ -43,10 +43,26 @@ def to_mono(pcm_data: bytes, channels: int) -> bytes:
     ]
     return struct.pack(f"<{len(mono)}h", *mono)
 
+
+@dataclass
+class DeepgramStreamMetadata:
+    """Technische Angaben einer Deepgram-Streaming-Sitzung."""
+
+    original_channels: int
+    sample_rate: int
+    audio_duration_seconds: float
+    chunks_sent: int = 0
+    audio_finished_at_seconds: float | None = None
+    request_id: str | None = None
+
+
 class DeepgramStreamingProvider:
     """Überträgt WAV-Audio und liefert Deepgram-STT-Segmente."""
 
     name = "deepgram"
+
+    def __init__(self) -> None:
+        self.metadata: DeepgramStreamMetadata | None = None
 
     def stream(
         self,
@@ -55,6 +71,8 @@ class DeepgramStreamingProvider:
         *,
         started_at: float,
     ) -> None:
+        self.metadata = None
+
         api_key = (os.getenv("DEEPGRAM_API_KEY") or "").strip()
         if not api_key:
             raise RuntimeError("DEEPGRAM_API_KEY ist nicht gesetzt.")
@@ -66,6 +84,7 @@ class DeepgramStreamingProvider:
             sample_rate = audio.getframerate()
             sample_width = audio.getsampwidth()
             compression = audio.getcomptype()
+            duration = audio.getnframes() / sample_rate
 
         if compression != "NONE" or sample_width != 2:
             raise ValueError(
@@ -76,6 +95,13 @@ class DeepgramStreamingProvider:
             raise ValueError(
                 "Die WAV-Datei muss Mono oder Stereo sein."
             )
+
+        metadata = DeepgramStreamMetadata(
+            original_channels=channels,
+            sample_rate=sample_rate,
+            audio_duration_seconds=duration,
+        )
+        self.metadata = metadata
 
         parameters = urlencode({
             "model": "nova-3",
@@ -132,8 +158,12 @@ class DeepgramStreamingProvider:
                             return
 
                         ws.send_binary(to_mono(raw_chunk, channels))
+                        metadata.chunks_sent += 1
 
                 if not stop.is_set():
+                    metadata.audio_finished_at_seconds = (
+                        time.perf_counter() - started_at
+                    )
                     ws.send(json.dumps({"type": "CloseStream"}))
 
             except Exception as error:
@@ -196,6 +226,10 @@ class DeepgramStreamingProvider:
 
                 event = json.loads(message)
 
+                if event.get("type") == "Metadata":
+                    metadata.request_id = event.get("request_id")
+                    continue
+
                 if event.get("type") == "Error":
                     raise RuntimeError(
                         "Deepgram meldet einen Fehler: "
@@ -244,6 +278,7 @@ class DeepgramStreamingProvider:
             finally:
                 if sender.ident is not None:
                     sender.join()
+
 
 def transcribe_streaming(
     audio_path: str,
@@ -316,7 +351,6 @@ def transcribe_streaming(
 
     started = time.perf_counter()
 
-    # DeepL-Worker: Sprachabschnitte übersetzen
     def translate_worker():
         """Übersetzt finale Sprachabschnitte mit DeepL."""
 
@@ -394,10 +428,11 @@ def transcribe_streaming(
 
                     ws.send_binary(chunk)
                     stats["chunks_sent"] += 1
+
                     if frames_sent >= round(duration * sample_rate):
-                       audio_finished_at[0] = round(
-                           time.perf_counter() - started, 3
-                       )
+                        audio_finished_at[0] = round(
+                            time.perf_counter() - started, 3
+                        )
 
             if not stop.is_set():
                 ws.send(json.dumps({"type": "CloseStream"}))
@@ -490,7 +525,6 @@ def transcribe_streaming(
                 time.perf_counter() - started, 3
             )
 
-            
             if event.get("is_final", False):
                 segment_id = len(final_results) + 1
 
@@ -509,7 +543,6 @@ def transcribe_streaming(
                 translation_queue.put(segment)
 
                 print("[FINAL]", text)
-
 
             else:
                 interim_results.append({
@@ -605,7 +638,6 @@ def main():
         default="results/streaming/deepgram_stt.json",
         help="Pfad zur Ergebnisdatei",
     )
-
     parser.add_argument(
         "--target-lang",
         default="EN-US",
@@ -614,10 +646,10 @@ def main():
     args = parser.parse_args()
 
     try:
-       transcribe_streaming(
-           args.audio,
-           args.output,
-           target_lang=args.target_lang,
+        transcribe_streaming(
+            args.audio,
+            args.output,
+            target_lang=args.target_lang,
         )
     except (
         OSError,
