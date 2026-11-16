@@ -1,4 +1,4 @@
-"""Providerunabhängige Steuerung von Streaming-STT und Übersetzung."""
+"""Providerunabhängige Streaming-Kaskade für STT, Übersetzung und TTS."""
 
 import time
 from collections.abc import Callable
@@ -8,8 +8,13 @@ from threading import Thread
 from backend.app.core.interfaces import (
     StreamingSTTProvider,
     TranslationProvider,
+    TTSProvider,
 )
-from backend.app.core.models import STTSegment, TranslatedSegment
+from backend.app.core.models import (
+    STTSegment,
+    SynthesizedSegment,
+    TranslatedSegment,
+)
 
 
 def run_streaming_cascade(
@@ -19,22 +24,40 @@ def run_streaming_cascade(
     translation_provider: TranslationProvider,
     source_lang: str = "DE",
     target_lang: str = "EN-US",
+    tts_provider: TTSProvider | None = None,
+    on_audio: Callable[[SynthesizedSegment], None] | None = None,
     on_segment: Callable[[STTSegment], None] | None = None,
     started_at: float | None = None,
 ) -> list[TranslatedSegment]:
-    """Übersetzt finale STT-Segmente während der Transkription.
+    """Verarbeitet finale STT-Segmente in Empfangsreihenfolge.
 
-    Ein einzelner Worker erhält die Empfangsreihenfolge.
+    Ein Worker übersetzt die Segmente und erzeugt optional Audio.
+    Der STT-Empfang läuft unabhängig davon weiter.
 
-    on_segment kann alle STT-Segmente für die Ergebnisausgabe erfassen.
-    Dieser Callback läuft im Empfangspfad und sollte nur kurz arbeiten.
+    on_segment erhält alle STT-Segmente im Empfangspfad.
+    on_audio erhält erzeugte Audiosegmente im Worker.
+    Beide Callbacks sollten nur kurz arbeiten.
 
-    started_at ermöglicht eine gemeinsame Zeitbasis mit dem Aufrufer.
-    Ohne Vorgabe beginnt die Zeitmessung beim Start dieser Funktion.
+    Bei aktiviertem TTS ist on_audio erforderlich, damit die Audiodaten
+    an den Aufrufer weitergegeben werden.
 
-    Die Funktion wartet auf alle Übersetzungen. Fehler werden an den
-    Aufrufer weitergegeben.
+    started_at ist der gemeinsame time.perf_counter()-Startwert.
+    Ohne Vorgabe wird beim Funktionsaufruf eine neue Zeitbasis erstellt.
+
+    Die Funktion wartet auf den Worker und gibt die Übersetzungen zurück.
+    Fehler werden an den Aufrufer weitergegeben. Bereits an Callbacks
+    übergebene Ergebnisse können bei einem späteren Fehler vorliegen.
     """
+
+    if tts_provider is not None and on_audio is None:
+        raise ValueError(
+            "Bei aktiviertem TTS muss on_audio angegeben werden."
+        )
+
+    if tts_provider is None and on_audio is not None:
+        raise ValueError(
+            "Für on_audio muss ein TTS-Provider angegeben werden."
+        )
 
     cascade_started_at = (
         time.perf_counter() if started_at is None else started_at
@@ -42,7 +65,7 @@ def run_streaming_cascade(
 
     segments: Queue[STTSegment | None] = Queue()
     results: list[TranslatedSegment] = []
-    translation_errors: list[Exception] = []
+    processing_errors: list[Exception] = []
 
     def receive_segment(segment: STTSegment) -> None:
         if on_segment is not None:
@@ -51,7 +74,7 @@ def run_streaming_cascade(
         if segment.is_final and segment.text.strip():
             segments.put(segment)
 
-    def translate_segments() -> None:
+    def process_segments() -> None:
         while True:
             segment = segments.get()
 
@@ -61,7 +84,7 @@ def run_streaming_cascade(
 
                 # Nach einem Fehler keine weiteren Provider-Aufrufe.
                 # Die Warteschlange wird bis zum Endsignal geleert.
-                if translation_errors:
+                if processing_errors:
                     continue
 
                 translation_started = time.perf_counter()
@@ -72,7 +95,7 @@ def run_streaming_cascade(
                     target_lang=target_lang,
                 )
 
-                completed_at = time.perf_counter()
+                translation_finished = time.perf_counter()
 
                 if not translated_text.strip():
                     raise ValueError(
@@ -80,31 +103,58 @@ def run_streaming_cascade(
                         f"{segment.segment_id}."
                     )
 
-                results.append(
-                    TranslatedSegment(
-                        source=segment,
-                        text=translated_text,
-                        provider=translation_provider.name,
-                        translation_seconds=(
-                            completed_at - translation_started
-                        ),
-                        completed_at_seconds=(
-                            completed_at - cascade_started_at
-                        ),
-                    )
+                translated_segment = TranslatedSegment(
+                    source=segment,
+                    text=translated_text,
+                    provider=translation_provider.name,
+                    translation_seconds=(
+                        translation_finished - translation_started
+                    ),
+                    completed_at_seconds=(
+                        translation_finished - cascade_started_at
+                    ),
                 )
+                results.append(translated_segment)
+
+                if tts_provider is not None and on_audio is not None:
+                    synthesis_started = time.perf_counter()
+
+                    audio = tts_provider.synthesize(translated_text)
+
+                    synthesis_finished = time.perf_counter()
+
+                    if not audio:
+                        raise ValueError(
+                            "Leere TTS-Ausgabe für Segment "
+                            f"{segment.segment_id}."
+                        )
+
+                    on_audio(
+                        SynthesizedSegment(
+                            source=translated_segment,
+                            audio=audio,
+                            audio_format=tts_provider.audio_format,
+                            provider=tts_provider.name,
+                            synthesis_seconds=(
+                                synthesis_finished - synthesis_started
+                            ),
+                            completed_at_seconds=(
+                                synthesis_finished - cascade_started_at
+                            ),
+                        )
+                    )
 
             except Exception as error:
-                translation_errors.append(error)
+                processing_errors.append(error)
 
             finally:
                 segments.task_done()
 
-    translator = Thread(
-        target=translate_segments,
-        name="streaming-translation",
+    worker = Thread(
+        target=process_segments,
+        name="streaming-cascade-worker",
     )
-    translator.start()
+    worker.start()
 
     try:
         stt_provider.stream(
@@ -116,11 +166,11 @@ def run_streaming_cascade(
         # Das Endsignal folgt allen bereits empfangenen Segmenten.
         # Auch bei einem STT-Fehler wird auf den Worker gewartet.
         segments.put(None)
-        translator.join()
+        worker.join()
 
-    if translation_errors:
+    if processing_errors:
         raise RuntimeError(
-            "Die Übersetzung in der Streaming-Kaskade ist fehlgeschlagen."
-        ) from translation_errors[0]
+            "Die Verarbeitung in der Streaming-Kaskade ist fehlgeschlagen."
+        ) from processing_errors[0]
 
     return results
