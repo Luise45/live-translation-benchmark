@@ -202,24 +202,40 @@ def translate_turns(turns, out_dir: Path):
 
     return results
     
+def parse_args():
+    parser = argparse.ArgumentParser(
+        description="Translate WAV turns (24 kHz, mono, PCM16) with OpenAI realtime translation."
+    )
+    parser.add_argument(
+        "--turn",
+        nargs=3,
+        action="append",
+        required=True,
+        metavar=("SPEAKER", "AUDIO_FILE", "TARGET_LANG"),
+        help="One conversation turn. Repeat for each turn. TARGET_LANG is the "
+             "language to translate INTO (e.g. en, de).",
+    )
+    parser.add_argument("--out", type=Path, default=Path("out"),
+                        help="Output directory (default: .../out)")
+    return parser.parse_args()
+
+
 def main():
-  
     for directory in (Path(__file__).resolve().parent, *Path(__file__).resolve().parents):
         if (directory / ".env").is_file():
             load_dotenv(directory / ".env")
             break
-   
-    root = Path(__file__).resolve().parent
 
+    args = parse_args()
 
-    turns = [
-        ("customer", root / "audio" / "de_kunde_t1_24k.wav", "de"),
-        ("agent", root / "audio" / "eng_sup_turn1_24k.wav", "en"),
-        ("customer", root / "audio" / "de_kunde_t2_24k.wav", "de"),
-        ("agent", root / "audio" / "eng_sup_t2_24k.wav", "en"),
-    ]
+    turns = []
+    for speaker, audio_file, target_language in args.turn:
+        audio_path = Path(audio_file)
+        if not audio_path.is_file():
+            raise SystemExit(f"Audio file not found: {audio_path}")
+        turns.append((speaker, audio_path, target_language))
 
-    results = translate_turns(turns, root / "out")
+    results = translate_turns(turns, args.out)
 
     for turn in results:
         print(f"\n{turn['turn']}. {turn['speaker']}")
