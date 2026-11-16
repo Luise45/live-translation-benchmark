@@ -181,8 +181,8 @@ def test_streaming_provider_liefert_segmente(monkeypatch, tmp_path):
         )
 
     monkeypatch.setattr(
-        i_deepgram_streaming,
-        "translate_text",
+        i_deepl.deepl,
+        "DeepLClient",
         unexpected_translation,
     )
 
