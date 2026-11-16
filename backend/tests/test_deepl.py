@@ -33,3 +33,30 @@ def test_deepl_uebersetzung(monkeypatch):
     )
 
     assert result == "Hello"
+
+def test_deepl_provider_leitet_parameter_weiter(monkeypatch):
+    """Der Adapter übergibt Text und Sprachen unverändert."""
+
+    calls = []
+
+    def fake_translate_text(text, *, source_lang, target_lang):
+        calls.append((text, source_lang, target_lang))
+        return "Bonjour"
+
+    monkeypatch.setattr(
+        i_deepl,
+        "translate_text",
+        fake_translate_text,
+    )
+
+    provider = i_deepl.DeepLTranslationProvider()
+
+    result = provider.translate(
+        "Guten Tag",
+        source_lang="DE",
+        target_lang="FR",
+    )
+
+    assert provider.name == "deepl"
+    assert result == "Bonjour"
+    assert calls == [("Guten Tag", "DE", "FR")]
