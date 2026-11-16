@@ -305,3 +305,84 @@ def test_kaskade_verwendet_gemeinsame_zeitbasis(monkeypatch):
     assert result.source.received_at_seconds == 5.0
     assert result.completed_at_seconds == 5.0
     assert result.translation_seconds == 0.0
+
+@pytest.mark.parametrize(
+    ("provider_name", "audio_format", "audio_data"),
+    [
+        ("tts-a", "mp3", b"audio-a"),
+        ("tts-b", "wav", b"audio-b"),
+    ],
+)
+def test_tts_provider_ist_austauschbar(
+    provider_name, audio_format, audio_data
+):
+    """TTS erhält Übersetzungen; Audio bleibt den Segmenten zugeordnet."""
+
+    class FakeTTS:
+        def __init__(self):
+            self.name = provider_name
+            self.audio_format = audio_format
+            self.calls = []
+
+        def synthesize(self, text):
+            self.calls.append(text)
+            return audio_data
+
+    source_segments = [
+        STTSegment(10, "Hallo", True),
+        STTSegment(20, "Welt", True),
+    ]
+    tts = FakeTTS()
+    audio_segments = []
+
+    translations = run_streaming_cascade(
+        "test.wav",
+        stt_provider=FakeSTTProvider(source_segments),
+        translation_provider=FakeTranslationProvider(),
+        tts_provider=tts,
+        on_audio=audio_segments.append,
+    )
+
+    assert tts.calls == ["EN: Hallo", "EN: Welt"]
+    assert len(audio_segments) == 2
+
+    assert [
+        segment.source.source.segment_id
+        for segment in audio_segments
+    ] == [10, 20]
+
+    for index, segment in enumerate(audio_segments):
+        assert segment.source is translations[index]
+        assert segment.source.source is source_segments[index]
+        assert segment.audio == audio_data
+        assert segment.audio_format == audio_format
+        assert segment.provider == provider_name
+        assert segment.synthesis_seconds >= 0
+        assert (
+            segment.completed_at_seconds
+            >= segment.source.completed_at_seconds
+        )
+
+
+def test_tts_fehler_wird_weitergegeben():
+    original_error = ValueError("TTS-Testfehler")
+
+    class FailingTTS:
+        name = "failing-tts"
+        audio_format = "mp3"
+
+        def synthesize(self, text):
+            raise original_error
+
+    with pytest.raises(RuntimeError) as caught:
+        run_streaming_cascade(
+            "test.wav",
+            stt_provider=FakeSTTProvider(
+                [STTSegment(1, "Hallo", True)]
+            ),
+            translation_provider=FakeTranslationProvider(),
+            tts_provider=FailingTTS(),
+            on_audio=lambda segment: None,
+        )
+
+    assert caught.value.__cause__ is original_error
