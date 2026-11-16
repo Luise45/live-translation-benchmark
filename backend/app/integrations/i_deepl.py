@@ -1,3 +1,4 @@
+"""DeepL-Anbindung für einzelne Übersetzungen und die Streaming-Kaskade."""
 
 import os
 
@@ -31,4 +32,23 @@ def translate_text(
     )
 
     return result.text
+
+
+class DeepLTranslationProvider:
+    """Stellt DeepL über die gemeinsame Provider-Schnittstelle bereit."""
+
+    name = "deepl"
+
+    def translate(
+        self,
+        text: str,
+        *,
+        source_lang: str,
+        target_lang: str,
+    ) -> str:
+        return translate_text(
+            text,
+            source_lang=source_lang,
+            target_lang=target_lang,
+        )
 
