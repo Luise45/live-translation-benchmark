@@ -13,12 +13,14 @@ import struct
 import threading
 import time
 import wave
+from collections.abc import Callable
 from pathlib import Path
 from queue import Queue
 from urllib.parse import urlencode
 
 import websocket
 
+from backend.app.core.models import STTSegment
 from backend.app.integrations.i_deepl import translate_text
 
 
@@ -41,6 +43,207 @@ def to_mono(pcm_data: bytes, channels: int) -> bytes:
     ]
     return struct.pack(f"<{len(mono)}h", *mono)
 
+class DeepgramStreamingProvider:
+    """Überträgt WAV-Audio und liefert Deepgram-STT-Segmente."""
+
+    name = "deepgram"
+
+    def stream(
+        self,
+        audio_path: str,
+        on_segment: Callable[[STTSegment], None],
+        *,
+        started_at: float,
+    ) -> None:
+        api_key = (os.getenv("DEEPGRAM_API_KEY") or "").strip()
+        if not api_key:
+            raise RuntimeError("DEEPGRAM_API_KEY ist nicht gesetzt.")
+
+        path = Path(audio_path)
+
+        with wave.open(str(path), "rb") as audio:
+            channels = audio.getnchannels()
+            sample_rate = audio.getframerate()
+            sample_width = audio.getsampwidth()
+            compression = audio.getcomptype()
+
+        if compression != "NONE" or sample_width != 2:
+            raise ValueError(
+                "Unterstützt wird nur unkomprimiertes PCM16-WAV."
+            )
+
+        if channels not in (1, 2):
+            raise ValueError(
+                "Die WAV-Datei muss Mono oder Stereo sein."
+            )
+
+        parameters = urlencode({
+            "model": "nova-3",
+            "language": "de",
+            "encoding": "linear16",
+            "sample_rate": sample_rate,
+            "channels": 1,
+            "interim_results": "true",
+            "endpointing": 300,
+            "smart_format": "true",
+        })
+
+        ws = websocket.create_connection(
+            f"{DEEPGRAM_URL}?{parameters}",
+            header=[f"Authorization: Token {api_key}"],
+            timeout=10,
+        )
+
+        stop = threading.Event()
+        sender_done = threading.Event()
+        sender_errors: list[Exception] = []
+        sender_finished_at = 0.0
+
+        def send_audio() -> None:
+            nonlocal sender_finished_at
+
+            try:
+                with wave.open(str(path), "rb") as audio:
+                    frames_per_chunk = max(
+                        1,
+                        round(sample_rate * CHUNK_MS / 1000),
+                    )
+                    frames_sent = 0
+                    send_started = time.perf_counter()
+
+                    while not stop.is_set():
+                        raw_chunk = audio.readframes(frames_per_chunk)
+
+                        if not raw_chunk:
+                            break
+
+                        frames_sent += len(raw_chunk) // (
+                            channels * sample_width
+                        )
+                        deadline = (
+                            send_started + frames_sent / sample_rate
+                        )
+                        delay = max(
+                            0.0,
+                            deadline - time.perf_counter(),
+                        )
+
+                        if stop.wait(delay):
+                            return
+
+                        ws.send_binary(to_mono(raw_chunk, channels))
+
+                if not stop.is_set():
+                    ws.send(json.dumps({"type": "CloseStream"}))
+
+            except Exception as error:
+                sender_errors.append(error)
+                stop.set()
+
+            finally:
+                sender_finished_at = time.monotonic()
+                sender_done.set()
+
+        sender = threading.Thread(
+            target=send_audio,
+            name="deepgram-audio-sender",
+        )
+
+        try:
+            ws.settimeout(1.0)
+            sender.start()
+
+            next_segment_id = 1
+
+            while True:
+                if sender_errors:
+                    raise RuntimeError(
+                        "Audioübertragung fehlgeschlagen."
+                    ) from sender_errors[0]
+
+                if (
+                    sender_done.is_set()
+                    and time.monotonic() - sender_finished_at
+                    > RECEIVE_TIMEOUT
+                ):
+                    raise TimeoutError(
+                        "Deepgram hat die Streaming-Sitzung "
+                        "nicht rechtzeitig abgeschlossen."
+                    )
+
+                try:
+                    message = ws.recv()
+                except websocket.WebSocketTimeoutException:
+                    continue
+                except websocket.WebSocketConnectionClosedException:
+                    message = ""
+
+                if not message:
+                    # CloseStream kann bereits beantwortet werden,
+                    # bevor der Sender seinen Abschluss signalisiert.
+                    if not sender_done.wait(timeout=1.0):
+                        raise RuntimeError(
+                            "WebSocket wurde während der "
+                            "Audioübertragung geschlossen."
+                        )
+
+                    if sender_errors:
+                        raise RuntimeError(
+                            "Audioübertragung fehlgeschlagen."
+                        ) from sender_errors[0]
+
+                    break
+
+                event = json.loads(message)
+
+                if event.get("type") == "Error":
+                    raise RuntimeError(
+                        "Deepgram meldet einen Fehler: "
+                        + str(event.get("description", "Unbekannt"))
+                    )
+
+                if event.get("type") != "Results":
+                    continue
+
+                alternatives = event.get("channel", {}).get(
+                    "alternatives", []
+                )
+                if not alternatives:
+                    continue
+
+                text = alternatives[0].get("transcript", "").strip()
+                if not text:
+                    continue
+
+                is_final = bool(event.get("is_final", False))
+
+                segment = STTSegment(
+                    segment_id=next_segment_id,
+                    text=text,
+                    is_final=is_final,
+                    start_seconds=event.get("start"),
+                    duration_seconds=event.get("duration"),
+                    received_at_seconds=(
+                        time.perf_counter() - started_at
+                    ),
+                    speech_final=bool(
+                        event.get("speech_final", False)
+                    ),
+                )
+
+                on_segment(segment)
+
+                if is_final:
+                    next_segment_id += 1
+
+        finally:
+            stop.set()
+
+            try:
+                ws.close()
+            finally:
+                if sender.ident is not None:
+                    sender.join()
 
 def transcribe_streaming(
     audio_path: str,
