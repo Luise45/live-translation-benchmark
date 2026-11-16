@@ -203,6 +203,7 @@ def translate_turns(turns, out_dir: Path):
     return results
     
 def parse_args():
+    
     parser = argparse.ArgumentParser(
         description="Translate WAV turns (24 kHz, mono, PCM16) with OpenAI realtime translation."
     )
