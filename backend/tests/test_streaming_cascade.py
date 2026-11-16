@@ -224,3 +224,84 @@ def test_leerer_stream_liefert_keine_uebersetzungen():
 
     assert results == []
     assert translator.calls == []
+
+
+def test_beobachter_erhaelt_auch_vorlaeufige_segmente():
+    """Alle Segmente werden gemeldet, aber nur finale übersetzt."""
+
+    interim = STTSegment(
+        segment_id=1,
+        text="Guten",
+        is_final=False,
+    )
+    final = STTSegment(
+        segment_id=1,
+        text="Guten Tag",
+        is_final=True,
+    )
+
+    observed_segments = []
+    translator = FakeTranslationProvider()
+
+    results = run_streaming_cascade(
+        "test.wav",
+        stt_provider=FakeSTTProvider([interim, final]),
+        translation_provider=translator,
+        on_segment=observed_segments.append,
+    )
+
+    assert observed_segments == [interim, final]
+    assert translator.calls == [
+        ("Guten Tag", "DE", "EN-US"),
+    ]
+    assert len(results) == 1
+    assert results[0].source is final
+
+
+def test_kaskade_verwendet_gemeinsame_zeitbasis(monkeypatch):
+    """STT und Übersetzung beziehen sich auf denselben Startwert."""
+
+    from backend.app.benchmark import streaming_cascade
+
+    # Eine feste Uhr macht den Test unabhängig von der Rechnergeschwindigkeit.
+    monkeypatch.setattr(
+        streaming_cascade.time,
+        "perf_counter",
+        lambda: 105.0,
+    )
+
+    received_start_values = []
+
+    class RecordingSTT:
+        name = "recording-stt"
+
+        def stream(self, audio_path, on_segment, *, started_at):
+            received_start_values.append(started_at)
+
+            on_segment(
+                STTSegment(
+                    segment_id=7,
+                    text="Hallo",
+                    is_final=True,
+                    received_at_seconds=(
+                        streaming_cascade.time.perf_counter()
+                        - started_at
+                    ),
+                )
+            )
+
+    results = run_streaming_cascade(
+        "test.wav",
+        stt_provider=RecordingSTT(),
+        translation_provider=FakeTranslationProvider(),
+        started_at=100.0,
+    )
+
+    assert received_start_values == [100.0]
+    assert len(results) == 1
+
+    result = results[0]
+    assert result.source.segment_id == 7
+    assert result.source.received_at_seconds == 5.0
+    assert result.completed_at_seconds == 5.0
+    assert result.translation_seconds == 0.0
