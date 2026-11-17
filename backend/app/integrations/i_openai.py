@@ -74,18 +74,20 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
         raise ValueError("Set OPENAI_API_KEY in .env")
     
     timing = {"input_start": None, "input_end": None,
-              "first_output_audio": None, "last_output_audio": None}
-
-    def elapsed_ms(end, start):
-     if end is None or start is None:
-        return None
-    return round((end - start) * 1000, 2)
+              "first_output_audio": None,
+              "last_output_audio": None
+    }
 
     # Vorbereitungen für das spätere Senden und Empfangen. Die Aufgaben sind: Stoppsignal für threads, Fehler sammenl, Platzhalter für den kommenden Sender-Thread.
     stop = threading.Event()
     sender_errors, transcript, source_transcript, audio_chunks = [], [], [], []
     sender = None
-    
+
+      # Gesammelt werden: übersetzter Text, erkannter Originaltext, übersetztes Audio.
+    transcript = []
+    source_transcript = []
+    audio_chunks = []
+
     #Verbindung wird geöffnet
     ws = websocket.create_connection(
         URL, header=[f"Authorization: Bearer {api_key}"], timeout=60,)
@@ -105,28 +107,17 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
                     ws.send(json.dumps({
                        "type": "session.input_audio_buffer.append",
                        "audio": base64.b64encode(chunk).decode("ascii"),
-}))
-                deadline = time.perf_counter()
-                while not stop.is_set():   
-                # Wav wird in Stücken gesendet. Jedes Stück ist in einer JSON Nachricht verpackt. 
-                    chunk = audio.readframes(CHUNK_FRAMES)
-                    if not chunk:
-                        break
-                    ws.send(json.dumps({
-                        "type": "session.input_audio_buffer.append",
-                        "audio": base64.b64encode(chunk).decode("ascii"),
-                    }))
-                    # berechnet Dauer des Audiostücks
+             }))
+                    
                     deadline += len(chunk) / (SAMPLE_RATE * 2)
-                    # Lesend und senden - verbleibende Wartezeit. 
                     if stop.wait(max(0, deadline - time.perf_counter())):
                         return
             if not stop.is_set():
-               timing["input_end"] = time.perf_counter()
-               ws.send(json.dumps({"type": "session.close"}))
+                timing["input_end"] = time.perf_counter()
+                ws.send(json.dumps({"type": "session.close"}))
         except Exception as exc:
             sender_errors.append(exc)
-            ws.abort()  
+            ws.abort() 
 
     try:
         wait_for(ws, "session.created")
@@ -138,11 +129,8 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
             }},
         }))
         wait_for(ws, "session.updated")
-        events = []          
-        t_start = None
-        t_start = time.perf_counter()
         sender = threading.Thread(target=send_audio, daemon=True)
-        
+       
         sender.start()
         while True:
             event = receive(ws)
@@ -187,6 +175,16 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
         audio.setsampwidth(2)
         audio.setframerate(SAMPLE_RATE)
         audio.writeframes(b"".join(audio_chunks))
+   
+    latency = {
+        "first_audio_latency_ms": elapsed_ms(
+            timing["first_output_audio"], timing["input_start"]
+        ),
+        "completion_lag_ms": elapsed_ms(
+            timing["last_output_audio"], timing["input_end"]
+        ),
+        "input_duration_seconds": round(input_duration, 3),
+    }
         # Gibt den Übersetzten Text und den Originaltext zurück.
     return "".join(source_transcript), "".join(transcript)
 
@@ -199,10 +197,7 @@ Zeigt Texte und Speicherorte an.
 def translate_turns(turns, out_dir: Path):
     out_dir.mkdir(parents=True, exist_ok=True)
     results = []
-    first = {}
-    last_audio = None
-    input_end = {}
-    input_duration = None
+
 
     for number, (speaker, audio_path, target_language) in enumerate(turns, 1):
         output_path = out_dir / f"{number:03d}_{speaker}_{target_language}.wav"
@@ -224,15 +219,13 @@ def translate_turns(turns, out_dir: Path):
             "source_transcript": source,
             "translated_transcript": translation,
             "metrics": {
-            "latency": latency,
-            "translation_accuracy": None,
-            "critical_information": None,
-            "terminology": None,
+              "latency": latency,
+              "translation_accuracy": None,
+              "critical_information": None,
+              "terminology": None,
 },
         })
-        source, translation, latency = translate(
-    audio_path, output_path, target_language
-)
+      
 
         (out_dir / "conversation.json").write_text(
             json.dumps(results, ensure_ascii=False, indent=2),
