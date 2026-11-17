@@ -15,13 +15,16 @@ import wave
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
+from uuid import uuid4
 from urllib.parse import urlencode
 
 import websocket
 
 from backend.app.core.models import STTSegment
+from backend.app.core.models import SynthesizedSegment
 from backend.app.benchmark.streaming_cascade import run_streaming_cascade
 from backend.app.integrations.i_deepl import DeepLTranslationProvider
+from backend.app.integrations.i_elevenlabs import ElevenLabsTTSProvider
 
 
 DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen"
@@ -284,18 +287,74 @@ def transcribe_streaming(
     audio_path: str,
     output_path: str = "results/streaming/deepgram_stt.json",
     target_lang: str = "EN-US",
+    enable_tts: bool = False,
 ) -> dict:
-    """Startet die Deepgram–DeepL-Kaskade und speichert das Ergebnis."""
+    """Startet die Streaming-Kaskade und speichert Text und optional Audio."""
 
     path = Path(audio_path)
     if not path.is_file():
         raise FileNotFoundError(f"Audiodatei fehlt: {path}")
 
+    # Fehlende TTS-Konfiguration vor dem Start der Audioübertragung melden.
+    if enable_tts:
+        for variable in ("ELEVEN_API_KEY", "VOICE_ID"):
+            if not (os.getenv(variable) or "").strip():
+                raise RuntimeError(
+                    f"Umgebungsvariable fehlt: {variable}"
+                )
+
     stt_provider = DeepgramStreamingProvider()
     translation_provider = DeepLTranslationProvider()
+    tts_provider = ElevenLabsTTSProvider() if enable_tts else None
+
+    target = Path(output_path)
+
+    # Eigener Audioordner pro Durchlauf verhindert das Überschreiben
+    # von Segmentdateien vorheriger Durchläufe.
+    audio_dir = (
+        target.parent / f"{target.stem}_audio_{uuid4().hex}"
+        if enable_tts
+        else None
+    )
 
     received_segments: list[STTSegment] = []
+    audio_results: list[dict] = []
     started_at = time.perf_counter()
+
+    def save_audio(segment: SynthesizedSegment) -> None:
+        """Speichert jedes fertige Segment direkt im TTS-Worker."""
+
+        if audio_dir is None:
+            raise RuntimeError("Kein Audio-Ausgabeordner konfiguriert.")
+
+        available_at = time.perf_counter() - started_at
+        sequence = len(audio_results) + 1
+        segment_id = segment.source.source.segment_id
+
+        audio_dir.mkdir(parents=True, exist_ok=True)
+        audio_file = audio_dir / f"segment_{sequence:06d}.mp3"
+        audio_file.write_bytes(segment.audio)
+
+        audio_results.append({
+            "sequence": sequence,
+            "segment_id": segment_id,
+            "translated_text": segment.source.text,
+            "provider": segment.provider,
+            "audio_format": segment.audio_format,
+            "audio_path": str(audio_file),
+            "synthesis_seconds": round(
+                segment.synthesis_seconds, 3
+            ),
+            "completed_at_seconds": round(
+                segment.completed_at_seconds, 3
+            ),
+            "available_at_seconds": round(available_at, 3),
+            "saved_at_seconds": round(
+                time.perf_counter() - started_at, 3
+            ),
+        })
+
+        print(f"[AUDIO] Segment {segment_id}: {audio_file}")
 
     translated_segments = run_streaming_cascade(
         str(path),
@@ -303,6 +362,8 @@ def transcribe_streaming(
         translation_provider=translation_provider,
         source_lang="DE",
         target_lang=target_lang,
+        tts_provider=tts_provider,
+        on_audio=save_audio if enable_tts else None,
         on_segment=received_segments.append,
         started_at=started_at,
     )
@@ -324,7 +385,6 @@ def transcribe_streaming(
             "Deepgram hat keine Sitzungsmetadaten bereitgestellt."
         )
 
-    # Das bisherige JSON-Format bleibt für bestehende Aufrufer erhalten.
     interim_results = [
         {
             "text": segment.text,
@@ -402,7 +462,18 @@ def transcribe_streaming(
         "request_id": metadata.request_id,
     }
 
-    target = Path(output_path)
+    if enable_tts:
+        result.update({
+            "tts_provider": tts_provider.name,
+            "audio_results": audio_results,
+            "synthesized_segments": len(audio_results),
+            "time_to_first_audio_seconds": (
+                audio_results[0]["available_at_seconds"]
+                if audio_results
+                else None
+            ),
+        })
+
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(
         json.dumps(result, ensure_ascii=False, indent=2),
@@ -415,13 +486,19 @@ def transcribe_streaming(
     print("Gesamtdauer:", result["total_elapsed_seconds"], "s")
     print("JSON:", target)
 
+    if enable_tts:
+        print("Erzeugte Audiosegmente:", len(audio_results))
+
     return result
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Deepgram Nova-3 Streaming-STT"
+        description="Streaming-Kaskade mit optionaler ElevenLabs-Ausgabe"
     )
-    parser.add_argument("audio", help="Pfad zur WAV-Testdatei")
+    parser.add_argument(
+        "audio",
+        help="Pfad zur WAV-Testdatei",
+    )
     parser.add_argument(
         "--output",
         default="results/streaming/deepgram_stt.json",
@@ -432,6 +509,12 @@ def main():
         default="EN-US",
         help="DeepL-Zielsprache, z. B. EN-US, FR oder ES",
     )
+    parser.add_argument(
+        "--tts",
+        action="store_true",
+        help="Übersetzte Segmente mit ElevenLabs als MP3 ausgeben",
+    )
+
     args = parser.parse_args()
 
     try:
@@ -439,6 +522,7 @@ def main():
             args.audio,
             args.output,
             target_lang=args.target_lang,
+            enable_tts=args.tts,
         )
     except (
         OSError,
@@ -449,7 +533,6 @@ def main():
         websocket.WebSocketException,
     ) as error:
         parser.exit(1, f"Streaming fehlgeschlagen: {error}\n")
-
 
 if __name__ == "__main__":
     main()
