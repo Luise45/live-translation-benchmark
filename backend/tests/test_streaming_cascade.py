@@ -386,3 +386,81 @@ def test_tts_fehler_wird_weitergegeben():
         )
 
     assert caught.value.__cause__ is original_error
+
+
+def test_tts_blockiert_nicht_und_audio_entsteht_vor_streamende():
+    second_translation_finished = Event()
+    first_audio_received = Event()
+    stream_finished = Event()
+
+    audio_segments = []
+    audio_before_stream_end = []
+
+    class StreamingSTT:
+        name = "streaming-stt"
+
+        def stream(self, audio_path, on_segment, *, started_at):
+            try:
+                on_segment(STTSegment(1, "Hallo", True))
+                on_segment(STTSegment(2, "Welt", True))
+
+                if not first_audio_received.wait(timeout=5):
+                    raise AssertionError(
+                        "Keine Audioausgabe vor dem Ende des STT-Streams."
+                    )
+            finally:
+                stream_finished.set()
+
+    class Translator:
+        name = "test-translator"
+
+        def translate(self, text, *, source_lang, target_lang):
+            if text == "Welt":
+                second_translation_finished.set()
+
+            return f"EN: {text}"
+
+    class WaitingTTS:
+        name = "waiting-tts"
+        audio_format = "mp3"
+
+        def synthesize(self, text):
+            if text == "EN: Hallo":
+                if not second_translation_finished.wait(timeout=5):
+                    raise AssertionError(
+                        "TTS blockiert die nächste Übersetzung."
+                    )
+
+            return text.encode("utf-8")
+
+    def receive_audio(segment):
+        audio_before_stream_end.append(
+            not stream_finished.is_set()
+        )
+        audio_segments.append(segment)
+        first_audio_received.set()
+
+    translations = run_streaming_cascade(
+        "test.wav",
+        stt_provider=StreamingSTT(),
+        translation_provider=Translator(),
+        tts_provider=WaitingTTS(),
+        on_audio=receive_audio,
+    )
+
+    assert stream_finished.is_set()
+    assert second_translation_finished.is_set()
+    assert audio_before_stream_end[0] is True
+
+    assert [segment.source.segment_id for segment in translations] == [
+        1,
+        2,
+    ]
+    assert [
+        segment.source.source.segment_id
+        for segment in audio_segments
+    ] == [1, 2]
+    assert [segment.audio for segment in audio_segments] == [
+        b"EN: Hallo",
+        b"EN: Welt",
+    ]
