@@ -310,3 +310,204 @@ def test_provider_setzt_alte_metadaten_zurueck(monkeypatch):
         )
 
     assert provider.metadata is None
+
+def test_streaming_speichert_audio_vor_ende_der_eingabe(
+    monkeypatch, tmp_path
+):
+    """Audio wird während der Eingabe gespeichert und korrekt zugeordnet."""
+
+    from pathlib import Path
+    from threading import Event
+
+    from backend.app.integrations import i_elevenlabs
+
+    monkeypatch.setenv("DEEPGRAM_API_KEY", "test-key")
+    monkeypatch.setenv("DEEPL_API_KEY", "test-key")
+    monkeypatch.setenv("ELEVEN_API_KEY", "test-key")
+    monkeypatch.setenv("VOICE_ID", "test-voice")
+
+    audio_path = tmp_path / "input.wav"
+    output_path = tmp_path / "result.json"
+
+    with wave.open(str(audio_path), "wb") as audio:
+        audio.setnchannels(1)
+        audio.setsampwidth(2)
+        audio.setframerate(16000)
+        audio.writeframes(b"\x00\x00" * 3200)
+
+    first_audio_saved = Event()
+    input_finished = Event()
+    saved_before_input_end = []
+
+    # Das tatsächliche Schreiben bleibt erhalten. Zusätzlich merken wir,
+    # ob die Eingabe zum Speicherzeitpunkt noch läuft.
+    original_write_bytes = Path.write_bytes
+
+    def observe_write_bytes(path, data):
+        written = original_write_bytes(path, data)
+
+        if path.suffix == ".mp3":
+            saved_before_input_end.append(
+                not input_finished.is_set()
+            )
+            first_audio_saved.set()
+
+        return written
+
+    monkeypatch.setattr(Path, "write_bytes", observe_write_bytes)
+
+    class FakeWebSocket:
+        def __init__(self):
+            self.messages = queue.Queue()
+            self.chunks_sent = 0
+
+        def settimeout(self, timeout):
+            pass
+
+        def send_binary(self, data):
+            self.chunks_sent += 1
+
+            if self.chunks_sent == 1:
+                for text in ("Hallo", "Welt"):
+                    self.messages.put(json.dumps({
+                        "type": "Results",
+                        "is_final": True,
+                        "channel": {
+                            "alternatives": [
+                                {"transcript": text}
+                            ]
+                        },
+                    }))
+
+            elif self.chunks_sent == 2:
+                if not first_audio_saved.wait(timeout=5):
+                    raise AssertionError(
+                        "Keine MP3-Datei während der Audioeingabe."
+                    )
+
+        def send(self, data):
+            if json.loads(data).get("type") == "CloseStream":
+                input_finished.set()
+                self.messages.put(json.dumps({
+                    "type": "Metadata",
+                    "request_id": "streaming-test",
+                }))
+                self.messages.put("")
+
+        def recv(self):
+            try:
+                return self.messages.get(timeout=1)
+            except queue.Empty:
+                raise (
+                    i_deepgram_streaming.websocket
+                    .WebSocketTimeoutException()
+                )
+
+        def close(self):
+            pass
+
+    monkeypatch.setattr(
+        i_deepgram_streaming.websocket,
+        "create_connection",
+        lambda *args, **kwargs: FakeWebSocket(),
+    )
+
+    class FakeDeepLClient:
+        def __init__(self, api_key, **kwargs):
+            assert api_key == "test-key"
+
+        def translate_text(self, text, *, source_lang, target_lang):
+            assert source_lang == "DE"
+            assert target_lang == "EN-US"
+
+            class Result:
+                pass
+
+            result = Result()
+            result.text = f"EN: {text}"
+            return result
+
+    monkeypatch.setattr(
+        i_deepl.deepl,
+        "DeepLClient",
+        FakeDeepLClient,
+    )
+
+    tts_texts = []
+
+    class FakeAudioResponse:
+        def __init__(self, audio):
+            self.audio = audio
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc_value, traceback):
+            return False
+
+        def read(self):
+            return self.audio
+
+    def fake_urlopen(request, *, timeout):
+        payload = json.loads(request.data.decode("utf-8"))
+        text = payload["text"]
+        tts_texts.append(text)
+        return FakeAudioResponse(text.encode("utf-8"))
+
+    monkeypatch.setattr(
+        i_elevenlabs,
+        "urlopen",
+        fake_urlopen,
+    )
+
+    result = i_deepgram_streaming.transcribe_streaming(
+        str(audio_path),
+        output_path=str(output_path),
+        enable_tts=True,
+    )
+
+    assert input_finished.is_set()
+    assert saved_before_input_end[0] is True
+    assert tts_texts == ["EN: Hallo", "EN: Welt"]
+
+    assert result["tts_provider"] == "elevenlabs"
+    assert result["synthesized_segments"] == 2
+    assert result["request_id"] == "streaming-test"
+
+    audio_results = result["audio_results"]
+
+    assert [item["sequence"] for item in audio_results] == [1, 2]
+    assert [item["segment_id"] for item in audio_results] == [1, 2]
+    assert [item["translated_text"] for item in audio_results] == [
+        "EN: Hallo",
+        "EN: Welt",
+    ]
+
+    for item, expected_text in zip(
+        audio_results,
+        ("EN: Hallo", "EN: Welt"),
+        strict=True,
+    ):
+        saved_audio = Path(item["audio_path"])
+
+        assert saved_audio.is_file()
+        assert saved_audio.suffix == ".mp3"
+        assert saved_audio.read_bytes() == expected_text.encode("utf-8")
+        assert item["audio_format"] == "mp3"
+        assert item["provider"] == "elevenlabs"
+        assert item["synthesis_seconds"] >= 0
+        assert (
+            item["completed_at_seconds"]
+            <= item["available_at_seconds"]
+            <= item["saved_at_seconds"]
+            <= result["total_elapsed_seconds"]
+        )
+
+    assert result["time_to_first_audio_seconds"] == (
+        audio_results[0]["available_at_seconds"]
+    )
+
+    saved_result = json.loads(
+        output_path.read_text(encoding="utf-8")
+    )
+    assert saved_result == result
