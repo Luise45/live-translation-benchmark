@@ -186,7 +186,7 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
         "input_duration_seconds": round(input_duration, 3),
     }
         # Gibt den Übersetzten Text und den Originaltext zurück.
-    return "".join(source_transcript), "".join(transcript)
+    return "".join(source_transcript), "".join(transcript), latency
 
 '''
 sucht nach der env Datei, liest die Eingabedatei, die Ausgabedatei und die Zielsprache ein.
@@ -204,7 +204,7 @@ def translate_turns(turns, out_dir: Path):
 
         print(f"Translating turn {number}: {speaker}")
 
-        source, translation = translate(
+        source, translation, latency = translate(
             audio_path,
             output_path,
             target_language,
@@ -274,6 +274,7 @@ def main():
         print(f"\n{turn['turn']}. {turn['speaker']}")
         print(f"Original: {turn['source_transcript']}")
         print(f"Translation: {turn['translated_transcript']}")
+        print(f"Latency: {turn['metrics']['latency']}")
 
 # wird beim Aufruf des Skripts/ Datei ausgeführt.
 if __name__ == "__main__":
