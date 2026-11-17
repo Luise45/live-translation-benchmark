@@ -1,0 +1,131 @@
+{
+  "dialogue_id": "dialogue_1",
+  "turns": [
+    {
+      "turn_id": "K1",
+      "speaker": "K",
+      "audio_file": "audio/de_kunde_t1_24k.wav",
+      "source_language": "de",
+      "target_language": "en",
+      "original_text": "Hallo, guten Tag. Ich habe ein Problem mit meinem Vertrag. Ich kann meine Kundennummer dort nicht finden. Mein Name ist Laura Neumann.",
+      "critical_information": [
+        {
+          "id": "customer_name",
+          "meaning": "The customer's name is Laura Neumann."
+        },
+        {
+          "id": "customer_number_missing",
+          "meaning": "The customer cannot find her customer number on the contract."
+        }
+      ],
+      "terminology": [
+        {
+          "source": "Kundennummer",
+          "accepted_translations": ["customer number", "customer ID"]
+        },
+        {
+          "source": "Vertrag",
+          "accepted_translations": ["contract"]
+        }
+      ]
+    },
+{
+      "turn_id": "K1",
+      "speaker": "K",
+      "audio_file": "audio/de_kunde_t1_24k.wav",
+      "source_language": "de",
+      "target_language": "en",
+      "original_text": "Hallo, guten Tag. Ich habe ein Problem mit meinem Vertrag. Ich kann meine Kundennummer dort nicht finden. Mein Name ist Laura Neumann.",
+      "critical_information": [
+        {
+          "id": "customer_name",
+          "meaning": "The customer's name is Laura Neumann."
+        },
+        {
+          "id": "customer_number_missing",
+          "meaning": "The customer cannot find her customer number on the contract."
+        }
+      ],
+      "terminology": [
+        {
+          "source": "Kundennummer",
+          "accepted_translations": ["customer number", "customer ID"]
+        },
+        {
+          "source": "Vertrag",
+          "accepted_translations": ["contract"]
+        }
+      ]
+    },
+     {
+      "turn_id": "K2",
+      "speaker": "K",
+      "audio_file": "audio/de_kunde_t2_24k.wav",
+      "source_language": "de",
+      "target_language": "en",
+      "original_text": "Danke für die Informationen. Noch eine Frage, ist es möglich, sich mit der Kundennummer im Online-Portal anzumelden?",
+      "critical_information": [
+    
+        {
+          "id": "customer_number_forlogin",
+          "meaning": "The customer wants to know if she can use her customer number to log in to the online portal."
+        }
+      ],
+      "terminology": [
+        {
+          "source": "Kundennummer",
+          "accepted_translations": ["customer number", "customer ID"]
+        },
+        {
+          "source": "Online-Portal",
+          "accepted_translations": ["online portal"]
+        }
+      ]
+    }, 
+     {
+      "turn_id": "A1",
+      "speaker": "A",
+      "audio_file": "audio/eng_sup_turn1_24k.wav",
+      "source_language": "en",
+      "target_language": "de",
+      "original_text": "let me quickly check your contract. Then I can help you find your customer number. I see, your customer number is here at the bottom of the contract. It is 5238.",
+      "critical_information": [
+        {
+          "id": "customer_number_bottom",
+          "meaning": "The customer's customer number is located at the bottom of the contract."
+        }
+      ],
+      "terminology": [
+        {
+          "source": "Customer number",
+          "accepted_translations": ["Kundennummer", "Kunden-ID"]
+        },
+        {
+          "source": "5238",
+          "accepted_translations": ["5238", "fünf zwei drei acht", "fünfzweidreiacht"]
+        }
+      ]
+    },
+    {
+      "turn_id": "A2",
+      "speaker": "A",
+      "audio_file": "audio/eng_sup_t2_24k.wav",
+      "source_language": "en",
+      "target_language": "de",
+      "original_text": "Yes, you can use a customer number to sign up or log in in the portal, but you can also use your email address or phone number.",
+      "critical_information": [
+        {
+          "id": "customer_login",
+          "meaning": "The customer number can be used to log in to the online portal"
+        }
+      ],
+      "terminology": [
+        {
+          "source": "Kundennummer",
+          "accepted_translations": ["customer number", "customer ID"]
+        }
+      ]
+    }
+
+  ]
+}
