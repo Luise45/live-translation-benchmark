@@ -94,9 +94,11 @@ def test_nur_finalisierte_abschnitte_uebersetzen(
         FakeDeepLClient,
     )
 
+    output_path = tmp_path / "result.json"
+
     result = i_deepgram_streaming.transcribe_streaming(
         str(audio_path),
-        output_path=str(tmp_path / "result.json"),
+        output_path=str(output_path),
         target_lang="EN-US",
     )
 
@@ -104,9 +106,50 @@ def test_nur_finalisierte_abschnitte_uebersetzen(
     assert len(result["final_results"]) == 1
     assert translated_texts == ["Guten Tag"]
 
-    assert result["translation_results"][0][
-        "translated_text"
-    ] == "Hello"
+    assert result["transcript"] == "Guten Tag"
+    assert result["provider"] == "deepgram"
+    assert result["translation_provider"] == "deepl"
+    assert result["target_language"] == "EN-US"
+    assert result["translated_segments"] == 1
+
+    final_segment = result["final_results"][0]
+    translation = result["translation_results"][0]
+
+    assert final_segment["segment_id"] == 1
+    assert final_segment["text"] == "Guten Tag"
+
+    assert translation["segment_id"] == final_segment["segment_id"]
+    assert translation["original_text"] == final_segment["text"]
+    assert translation["translated_text"] == "Hello"
+    assert translation["translation_seconds"] >= 0
+
+    assert (
+        final_segment["received_at_seconds"]
+        <= translation["completed_at_seconds"]
+        <= result["total_elapsed_seconds"]
+    )
+
+    assert result["input_audio"] == str(audio_path)
+    assert result["original_channels"] == 1
+    assert result["stream_channels"] == 1
+    assert result["sample_rate"] == 16000
+    assert result["audio_duration_seconds"] == pytest.approx(0.2)
+    assert result["chunk_ms"] == 100
+    assert result["chunks_sent"] == 2
+
+    assert result["audio_finished_at_seconds"] is not None
+    assert (
+        0 <= result["audio_finished_at_seconds"]
+        <= result["total_elapsed_seconds"]
+    )
+
+    assert output_path.is_file()
+
+    saved_result = json.loads(
+        output_path.read_text(encoding="utf-8")
+    )
+
+    assert saved_result == result
 
 def test_streaming_provider_liefert_segmente(monkeypatch, tmp_path):
     """Der Provider erhält IDs, Reihenfolge und STT-Zeitangaben."""
