@@ -62,6 +62,7 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
 
     # Audioformat wird kontrolliert, es muss mono, 16Bit (zwei Bytes pro Messwert), 24 kHz und nicht zip sein.
     with wave.open(str(audio_path), "rb") as audio:
+        input_duration = audio.getnframes() / SAMPLE_RATE
         if (audio.getnchannels(), audio.getsampwidth(), audio.getframerate(),
                 audio.getcomptype()) != (1, 2, SAMPLE_RATE, "NONE"):
             raise ValueError("Input must be a 24 kHz, mono, PCM16 WAV file")
@@ -94,9 +95,15 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
     def send_audio():
         try:
             with wave.open(str(audio_path), "rb") as audio:
-                input_duration = audio.getnframes() / SAMPLE_RATE
+                if timing["input_start"] is None:
+                 timing["input_start"] = time.perf_counter()
+
+                ws.send(json.dumps({
+                "type": "session.input_audio_buffer.append",
+                "audio": base64.b64encode(chunk).decode("ascii"),
+}))
                 deadline = time.perf_counter()
-                while not stop.is_set():
+                while not stop.is_set():   
                 # Wav wird in Stücken gesendet. Jedes Stück ist in einer JSON Nachricht verpackt. 
                     chunk = audio.readframes(CHUNK_FRAMES)
                     if not chunk:
@@ -111,8 +118,8 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
                     if stop.wait(max(0, deadline - time.perf_counter())):
                         return
             if not stop.is_set():
-                ws.send(json.dumps({"type": "session.close"}))
-                input_end["t"] = time.perf_counter() - t_start
+               timing["input_end"] = time.perf_counter()
+               ws.send(json.dumps({"type": "session.close"}))
         except Exception as exc:
             sender_errors.append(exc)
             ws.abort()  
@@ -135,12 +142,18 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
         sender.start()
         while True:
             event = receive(ws)
+            received_at = time.perf_counter()
             if event["type"] == "session.output_audio.delta":
                 if (event.get("sample_rate", SAMPLE_RATE) != SAMPLE_RATE
                         or event.get("channels", 1) != 1
                         or event.get("format", "pcm16") != "pcm16"):
                     raise RuntimeError("Received unexpected audio format")
-                audio_chunks.append(base64.b64decode(event["delta"], validate=True))
+                data = base64.b64decode(event["delta"], validate=True)
+                if data:
+                 audio_chunks.append(data)
+                if timing["first_output_audio"] is None:
+                 timing["first_output_audio"] = received_at
+                 timing["last_output_audio"] = received_at
                 
             elif event["type"] == "session.input_transcript.delta":
                 source_transcript.append(event["delta"])
