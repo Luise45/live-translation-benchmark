@@ -84,10 +84,17 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
     ws = websocket.create_connection(
         URL, header=[f"Authorization: Bearer {api_key}"], timeout=60,
     )
+    timing = {
+    "input_start": None,
+    "input_end": None,
+    "first_output_audio": None,
+    "last_output_audio": None,
+}
 # - Funktion organisiert den Vorgang des Sendens. Audio_send sendet dan die Datei.-
     def send_audio():
         try:
             with wave.open(str(audio_path), "rb") as audio:
+                input_duration = audio.getnframes() / SAMPLE_RATE
                 deadline = time.perf_counter()
                 while not stop.is_set():
                 # Wav wird in Stücken gesendet. Jedes Stück ist in einer JSON Nachricht verpackt. 
@@ -105,6 +112,7 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
                         return
             if not stop.is_set():
                 ws.send(json.dumps({"type": "session.close"}))
+                input_end["t"] = time.perf_counter() - t_start
         except Exception as exc:
             sender_errors.append(exc)
             ws.abort()  
@@ -140,6 +148,7 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
                 transcript.append(event["delta"])
             elif event["type"] == "session.closed":
                 break
+                
     except Exception:
         if sender_errors:
             raise RuntimeError("Audio sending failed") from sender_errors[0]
@@ -173,6 +182,10 @@ Zeigt Texte und Speicherorte an.
 def translate_turns(turns, out_dir: Path):
     out_dir.mkdir(parents=True, exist_ok=True)
     results = []
+    first = {}
+    last_audio = None
+    input_end = {}
+    input_duration = None
 
     for number, (speaker, audio_path, target_language) in enumerate(turns, 1):
         output_path = out_dir / f"{number:03d}_{speaker}_{target_language}.wav"
@@ -184,7 +197,7 @@ def translate_turns(turns, out_dir: Path):
             output_path,
             target_language,
         )
-
+          
         results.append({
             "turn": number,
             "speaker": speaker,
