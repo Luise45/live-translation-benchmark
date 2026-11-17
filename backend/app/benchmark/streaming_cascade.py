@@ -3,7 +3,7 @@
 import time
 from collections.abc import Callable
 from queue import Queue
-from threading import Thread
+from threading import Event, Thread
 
 from backend.app.core.interfaces import (
     StreamingSTTProvider,
@@ -29,24 +29,22 @@ def run_streaming_cascade(
     on_segment: Callable[[STTSegment], None] | None = None,
     started_at: float | None = None,
 ) -> list[TranslatedSegment]:
-    """Verarbeitet finale STT-Segmente in Empfangsreihenfolge.
+    """Verarbeitet STT, Übersetzung und optional TTS unabhängig.
 
-    Ein Worker übersetzt die Segmente und erzeugt optional Audio.
-    Der STT-Empfang läuft unabhängig davon weiter.
+    Finale STT-Segmente werden in Empfangsreihenfolge übersetzt.
+    Ein separater TTS-Worker verarbeitet die Übersetzungen ebenfalls
+    nacheinander. TTS blockiert dadurch nicht den Übersetzungs-Worker.
 
-    on_segment erhält alle STT-Segmente im Empfangspfad.
-    on_audio erhält erzeugte Audiosegmente im Worker.
+    on_segment läuft im STT-Empfangspfad.
+    on_audio läuft im TTS-Worker.
     Beide Callbacks sollten nur kurz arbeiten.
 
-    Bei aktiviertem TTS ist on_audio erforderlich, damit die Audiodaten
-    an den Aufrufer weitergegeben werden.
+    started_at ist ein gemeinsamer time.perf_counter()-Startwert.
+    Die Funktion wartet auf beide Worker und gibt die Übersetzungen
+    zurück. Bereits ausgegebene Audiosegmente bleiben bei späteren
+    Fehlern bestehen.
 
-    started_at ist der gemeinsame time.perf_counter()-Startwert.
-    Ohne Vorgabe wird beim Funktionsaufruf eine neue Zeitbasis erstellt.
-
-    Die Funktion wartet auf den Worker und gibt die Übersetzungen zurück.
-    Fehler werden an den Aufrufer weitergegeben. Bereits an Callbacks
-    übergebene Ergebnisse können bei einem späteren Fehler vorliegen.
+    Provider müssen ihre Netzwerkaufrufe durch Zeitlimits begrenzen.
     """
 
     if tts_provider is not None and on_audio is None:
@@ -63,98 +61,150 @@ def run_streaming_cascade(
         time.perf_counter() if started_at is None else started_at
     )
 
-    segments: Queue[STTSegment | None] = Queue()
+    stt_segments: Queue[STTSegment | None] = Queue()
+    translated_segments: Queue[TranslatedSegment | None] = Queue()
+    processing_errors: Queue[Exception] = Queue()
+    failed = Event()
+
     results: list[TranslatedSegment] = []
-    processing_errors: list[Exception] = []
+
+    def record_error(error: Exception) -> None:
+        processing_errors.put(error)
+        failed.set()
 
     def receive_segment(segment: STTSegment) -> None:
         if on_segment is not None:
             on_segment(segment)
 
-        if segment.is_final and segment.text.strip():
-            segments.put(segment)
+        if (
+            segment.is_final
+            and segment.text.strip()
+            and not failed.is_set()
+        ):
+            stt_segments.put(segment)
 
-    def process_segments() -> None:
-        while True:
-            segment = segments.get()
+    def translate_segments() -> None:
+        try:
+            while True:
+                segment = stt_segments.get()
 
-            try:
                 if segment is None:
                     return
 
-                # Nach einem Fehler keine weiteren Provider-Aufrufe.
-                # Die Warteschlange wird bis zum Endsignal geleert.
-                if processing_errors:
+                if failed.is_set():
                     continue
 
-                translation_started = time.perf_counter()
+                try:
+                    translation_started = time.perf_counter()
 
-                translated_text = translation_provider.translate(
-                    segment.text,
-                    source_lang=source_lang,
-                    target_lang=target_lang,
-                )
-
-                translation_finished = time.perf_counter()
-
-                if not translated_text.strip():
-                    raise ValueError(
-                        "Leere Übersetzung für Segment "
-                        f"{segment.segment_id}."
+                    text = translation_provider.translate(
+                        segment.text,
+                        source_lang=source_lang,
+                        target_lang=target_lang,
                     )
 
-                translated_segment = TranslatedSegment(
-                    source=segment,
-                    text=translated_text,
-                    provider=translation_provider.name,
-                    translation_seconds=(
-                        translation_finished - translation_started
-                    ),
-                    completed_at_seconds=(
-                        translation_finished - cascade_started_at
-                    ),
-                )
-                results.append(translated_segment)
+                    translation_finished = time.perf_counter()
 
-                if tts_provider is not None and on_audio is not None:
-                    synthesis_started = time.perf_counter()
-
-                    audio = tts_provider.synthesize(translated_text)
-
-                    synthesis_finished = time.perf_counter()
-
-                    if not audio:
+                    if not text.strip():
                         raise ValueError(
-                            "Leere TTS-Ausgabe für Segment "
+                            "Leere Übersetzung für Segment "
                             f"{segment.segment_id}."
                         )
 
-                    on_audio(
-                        SynthesizedSegment(
-                            source=translated_segment,
-                            audio=audio,
-                            audio_format=tts_provider.audio_format,
-                            provider=tts_provider.name,
-                            synthesis_seconds=(
-                                synthesis_finished - synthesis_started
-                            ),
-                            completed_at_seconds=(
-                                synthesis_finished - cascade_started_at
-                            ),
-                        )
+                    translated = TranslatedSegment(
+                        source=segment,
+                        text=text,
+                        provider=translation_provider.name,
+                        translation_seconds=(
+                            translation_finished - translation_started
+                        ),
+                        completed_at_seconds=(
+                            translation_finished - cascade_started_at
+                        ),
                     )
 
+                    results.append(translated)
+
+                    if tts_provider is not None and not failed.is_set():
+                        translated_segments.put(translated)
+
+                except Exception as error:
+                    record_error(error)
+
+        finally:
+            # Erst nach der letzten Übersetzung endet die TTS-Eingabe.
+            if tts_provider is not None:
+                translated_segments.put(None)
+
+    def synthesize_segments() -> None:
+        if tts_provider is None or on_audio is None:
+            return
+
+        while True:
+            segment = translated_segments.get()
+
+            if segment is None:
+                return
+
+            if failed.is_set():
+                continue
+
+            try:
+                synthesis_started = time.perf_counter()
+
+                audio = tts_provider.synthesize(segment.text)
+
+                synthesis_finished = time.perf_counter()
+
+                if not audio:
+                    raise ValueError(
+                        "Leere TTS-Ausgabe für Segment "
+                        f"{segment.source.segment_id}."
+                    )
+
+                on_audio(
+                    SynthesizedSegment(
+                        source=segment,
+                        audio=audio,
+                        audio_format=tts_provider.audio_format,
+                        provider=tts_provider.name,
+                        synthesis_seconds=(
+                            synthesis_finished - synthesis_started
+                        ),
+                        completed_at_seconds=(
+                            synthesis_finished - cascade_started_at
+                        ),
+                    )
+                )
+
             except Exception as error:
-                processing_errors.append(error)
+                record_error(error)
 
-            finally:
-                segments.task_done()
-
-    worker = Thread(
-        target=process_segments,
-        name="streaming-cascade-worker",
+    translation_worker = Thread(
+        target=translate_segments,
+        name="streaming-translation",
     )
-    worker.start()
+
+    tts_worker = (
+        Thread(
+            target=synthesize_segments,
+            name="streaming-tts",
+        )
+        if tts_provider is not None
+        else None
+    )
+
+    if tts_worker is not None:
+        tts_worker.start()
+
+    try:
+        translation_worker.start()
+    except Exception:
+        # Auch bei einem Startfehler keinen wartenden TTS-Thread hinterlassen.
+        if tts_worker is not None:
+            translated_segments.put(None)
+            tts_worker.join()
+        raise
 
     try:
         stt_provider.stream(
@@ -163,14 +213,15 @@ def run_streaming_cascade(
             started_at=cascade_started_at,
         )
     finally:
-        # Das Endsignal folgt allen bereits empfangenen Segmenten.
-        # Auch bei einem STT-Fehler wird auf den Worker gewartet.
-        segments.put(None)
-        worker.join()
+        stt_segments.put(None)
+        translation_worker.join()
 
-    if processing_errors:
+        if tts_worker is not None:
+            tts_worker.join()
+
+    if not processing_errors.empty():
         raise RuntimeError(
             "Die Verarbeitung in der Streaming-Kaskade ist fehlgeschlagen."
-        ) from processing_errors[0]
+        ) from processing_errors.get()
 
     return results
