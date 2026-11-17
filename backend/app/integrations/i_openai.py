@@ -21,6 +21,7 @@ import json
 import os
 import threading
 import time
+from tracemalloc import start
 import wave
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
@@ -62,7 +63,6 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
 
     # Audioformat wird kontrolliert, es muss mono, 16Bit (zwei Bytes pro Messwert), 24 kHz und nicht zip sein.
     with wave.open(str(audio_path), "rb") as audio:
-        input_duration = audio.getnframes() / SAMPLE_RATE
         if (audio.getnchannels(), audio.getsampwidth(), audio.getframerate(),
                 audio.getcomptype()) != (1, 2, SAMPLE_RATE, "NONE"):
             raise ValueError("Input must be a 24 kHz, mono, PCM16 WAV file")
@@ -72,35 +72,39 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
         raise ValueError("Set OPENAI_API_KEY in .env")
+    
+    timing = {"input_start": None, "input_end": None,
+              "first_output_audio": None, "last_output_audio": None}
+
+    def elapsed_ms(end, start):
+     if end is None or start is None:
+        return None
+    return round((end - start) * 1000, 2)
 
     # Vorbereitungen für das spätere Senden und Empfangen. Die Aufgaben sind: Stoppsignal für threads, Fehler sammenl, Platzhalter für den kommenden Sender-Thread.
     stop = threading.Event()
-    sender_errors = []
+    sender_errors, transcript, source_transcript, audio_chunks = [], [], [], []
     sender = None
-    # Aufgabe später: übersetzter text, erkannter Orginaltext und übersetzt Audiodaten werden gesammelt. 
-    transcript = []
-    source_transcript = []
-    audio_chunks = []
+    
     #Verbindung wird geöffnet
     ws = websocket.create_connection(
-        URL, header=[f"Authorization: Bearer {api_key}"], timeout=60,
-    )
-    timing = {
-    "input_start": None,
-    "input_end": None,
-    "first_output_audio": None,
-    "last_output_audio": None,
-}
+        URL, header=[f"Authorization: Bearer {api_key}"], timeout=60,)
+   
+    
 # - Funktion organisiert den Vorgang des Sendens. Audio_send sendet dan die Datei.-
     def send_audio():
         try:
             with wave.open(str(audio_path), "rb") as audio:
-                if timing["input_start"] is None:
                  timing["input_start"] = time.perf_counter()
+                 deadline = time.perf_counter()
+                 while not stop.is_set():
+                    chunk = audio.readframes(CHUNK_FRAMES)
+                    if not chunk:
+                        break
 
-                ws.send(json.dumps({
-                "type": "session.input_audio_buffer.append",
-                "audio": base64.b64encode(chunk).decode("ascii"),
+                    ws.send(json.dumps({
+                       "type": "session.input_audio_buffer.append",
+                       "audio": base64.b64encode(chunk).decode("ascii"),
 }))
                 deadline = time.perf_counter()
                 while not stop.is_set():   
@@ -219,7 +223,16 @@ def translate_turns(turns, out_dir: Path):
             "target_language": target_language,
             "source_transcript": source,
             "translated_transcript": translation,
+            "metrics": {
+            "latency": latency,
+            "translation_accuracy": None,
+            "critical_information": None,
+            "terminology": None,
+},
         })
+        source, translation, latency = translate(
+    audio_path, output_path, target_language
+)
 
         (out_dir / "conversation.json").write_text(
             json.dumps(results, ensure_ascii=False, indent=2),
