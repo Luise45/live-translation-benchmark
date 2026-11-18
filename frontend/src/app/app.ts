@@ -1,12 +1,12 @@
-import { Component, signal } from '@angular/core';
+import { Component } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 
+import { Navigation } from '../components/navigation/navigation';
+
 @Component({
-  imports: [RouterOutlet],
   selector: 'app-root',
-  styleUrl: './app.scss',
+  imports: [RouterOutlet, Navigation],
   templateUrl: './app.html',
+  styleUrl: './app.scss',
 })
-export class App {
-  protected readonly title = signal('frontend-app');
-}
+export class App {}
