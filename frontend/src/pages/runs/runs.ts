@@ -1,9 +1,8 @@
 import { Component } from '@angular/core';
 
 @Component({
-  imports: [],
   selector: 'app-runs',
-  styleUrl: './runs.scss',
   templateUrl: './runs.html',
+  styleUrl: './runs.scss',
 })
 export class Runs {}
