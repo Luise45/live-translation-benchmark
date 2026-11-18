@@ -52,6 +52,11 @@ def wait_for(ws, event_type):
     while receive(ws).get("type") != event_type:
         pass
 
+def elapsed_ms(end, start):
+    if end is None or start is None:
+        return None
+    return round((end - start) * 1000, 2)
+
 # - Funktion für Audio checken und Verbindung herstellen  -
 '''
 Die Funktion bekommt 3 Angaben, einmal die Eingabedatei, die Ausgabedatei und die Zeilsprache. 
@@ -68,6 +73,7 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
             raise ValueError("Input must be a 24 kHz, mono, PCM16 WAV file")
         if audio.getnframes() == 0:
             raise ValueError("Input recording is empty")
+        input_duration = audio.getnframes() / SAMPLE_RATE
     # API-Schlüssel gelesen. 
     api_key = os.getenv("OPENAI_API_KEY")
     if not api_key:
