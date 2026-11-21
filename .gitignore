@@ -14,3 +14,10 @@ translated.transcripts.json
 translated.wav
 
 test.py 
+
+# --- XY-44: Noise Test Data ---
+# We do not commit large audio files directly to keep the repo size small.
+# Instead, only the README with license information is committed.
+testdata/noise/*.wav
+testdata/noise/*.zip
+!testdata/noise/README.md
