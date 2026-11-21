@@ -8,12 +8,17 @@ requires-python = ">=3.11"
 dependencies = [
     "deepl>=1.0,<2.0",
     "numpy>=2.0,<3.0",
+    "psycopg[binary]>=3.3.9",
     "python-dotenv>=1.2.4",
     "scipy>=1.17.1",
     "websocket-client>=1.9.2",
     "websockets>=17.3",
 ]
-[project.optional-dependencies]
+
+[dependency-groups]
 dev = [
     "pytest>=9.0,<10.0",
 ]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
