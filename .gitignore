@@ -1,16 +1,33 @@
-# Secrets
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# IntelliJ
+.idea/
+
+# Secrets / API-Keys
 .env
 .env.*
 !.env.example
 
-# Python
-.venv/
-__pycache__/
-*.pyc
+# Temporäre Testergebnisse
+deepgram-antwort.json
+elevenlabs-antwort.txt
+test.mp3
+uebersetzung.mp3
+
+# Lokale Prototypen mit Zugangsdaten
+prototypes/
 
 # Generated results
 results/
 translated.transcripts.json
 translated.wav
 
+# Testdateien
 test.py 
+
+*.egg-info/

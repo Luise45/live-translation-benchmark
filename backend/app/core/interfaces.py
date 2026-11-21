@@ -1,32 +1,18 @@
-"""
-shared interfaces for all benchmark candidates.
-
-purpose:
-defines what every benchmark candidate must provide so the benchmark runner
-can use all candidates in the same way.
-
-used by:
-- benchmark/runner.py
-- candidate implementations
-
-does not contain:
-- provider API calls
-- provider-specific response formats
-- benchmark scoring
-"""
+"""Schnittstellen für vollständige Benchmark-Kandidaten und Einzelstufen."""
 
 from pathlib import Path
 from typing import Protocol
 
 from .models import CandidateResult as CandidateResult
+from .models import StageResult
 
 
 class Candidate(Protocol):
-    """Shared interface for benchmark candidates, including S2S and cascades."""
+    """Gemeinsame Schnittstelle für S2S- und Kaskaden-Kandidaten."""
+
     name: str
     provider: str
     architecture: str
-    
 
     def translate(
         self,
@@ -34,17 +20,45 @@ class Candidate(Protocol):
         source_language: str,
         target_language: str,
     ) -> CandidateResult:
-        """
-        Process one audio file in one translation direction.
+        """Verarbeitet eine Audiodatei in einer Übersetzungsrichtung.
 
-        The candidate handles provider-specific audio preparation,
-        language codes and integration calls.
+        Der Kandidat übernimmt providerspezifische Audioaufbereitung,
+        Sprachcodes und Integrationsaufrufe.
 
-        Return translated audio as complete WAV file bytes.
-        Use None for unavailable transcripts or first-audio latency.
+        Das Ergebnis enthält übersetztes Audio als vollständige
+        WAV-Datei in bytes. Nicht verfügbare Transkripte und die
+        unbekannte Zeit bis zur ersten Audioausgabe werden mit
+        None angegeben.
         """
         ...
-        """Three dots ... are a Python Ellipsis. In this Interface they pose as placeholders 
-        for an intentionally empty method body. here will be defined how to call translate(). 
-        A fitting candidate will provide this translate() method, with Eingabe- und Rückgabetyp, 
-        concrete implementation is inside that candidate class"""
+
+
+class STTCandidate(Protocol):
+    """Schnittstelle für einen einzelnen STT-Schritt."""
+
+    name: str
+
+    def transcribe(self, wav_path: str) -> StageResult:
+        ...
+
+
+class TranslationCandidate(Protocol):
+    """Schnittstelle für einen einzelnen Übersetzungsschritt."""
+
+    name: str
+
+    def translate(self, text: str) -> StageResult:
+        ...
+
+
+class TTSCandidate(Protocol):
+    """Schnittstelle für einen einzelnen TTS-Schritt mit Dateiausgabe."""
+
+    name: str
+
+    def synthesize(
+        self,
+        text: str,
+        output_path: str,
+    ) -> StageResult:
+        ...
