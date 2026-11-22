@@ -99,14 +99,17 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
         URL, header=[f"Authorization: Bearer {api_key}"], timeout=60,)
    
     
-# - Funktion organisiert den Vorgang des Sendens. Audio_send sendet dan die Datei.-
+# - Funktion organisiert den Vorgang des Sendens. Audio_send sendet dan die Datei.in Stücken an den Server, während der Hauptthread gleichzeitig Antworten empfängt.
     def send_audio():
         try:
             with wave.open(str(audio_path), "rb") as audio:
+                   # Startzeit der Eingabe merken, Basis für die Latenzmessung
                  timing["input_start"] = time.perf_counter()
+                   # Zeitpunkt, zu dem das nächste Stück gesendet werden soll
                  deadline = time.perf_counter()
                  while not stop.is_set():
                     chunk = audio.readframes(CHUNK_FRAMES)
+                     # Leeres Stück = Datei zu Ende
                     if not chunk:
                         break
 
@@ -114,10 +117,12 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
                        "type": "session.input_audio_buffer.append",
                        "audio": base64.b64encode(chunk).decode("ascii"),
              }))
-                    
+                     # Dauer des Stücks berechnen (2 Bytes pro Messwert)
                     deadline += len(chunk) / (SAMPLE_RATE * 2)
+                      # Warten, bis das nächste Stück dran ist. So wird in Echtzeit gesendet
                     if stop.wait(max(0, deadline - time.perf_counter())):
                         return
+            # Ende der Eingabe merken, Basis für den completion_lag
             if not stop.is_set():
                 timing["input_end"] = time.perf_counter()
                 ws.send(json.dumps({"type": "session.close"}))
@@ -135,6 +140,7 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
             }},
         }))
         wait_for(ws, "session.updated")
+        # sender thread starten. Gleichzeitig seenden und empfangen.
         sender = threading.Thread(target=send_audio, daemon=True)
        
         sender.start()
