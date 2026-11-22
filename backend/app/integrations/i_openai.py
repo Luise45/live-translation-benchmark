@@ -148,6 +148,7 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
             event = receive(ws)
             received_at = time.perf_counter()
             if event["type"] == "session.output_audio.delta":
+                # das Format muss stimmen 
                 if (event.get("sample_rate", SAMPLE_RATE) != SAMPLE_RATE
                         or event.get("channels", 1) != 1
                         or event.get("format", "pcm16") != "pcm16"):
@@ -155,10 +156,11 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
                 data = base64.b64decode(event["delta"], validate=True)
                 if data:
                  audio_chunks.append(data)
+                 # Latenz messen, wann das erste Audio ankommt und wann das letzte Audio ankommt
                 if timing["first_output_audio"] is None:
                  timing["first_output_audio"] = received_at
                  timing["last_output_audio"] = received_at
-                
+               
             elif event["type"] == "session.input_transcript.delta":
                 source_transcript.append(event["delta"])
             elif event["type"] == "session.output_transcript.delta":
@@ -188,6 +190,7 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
         audio.setframerate(SAMPLE_RATE)
         audio.writeframes(b"".join(audio_chunks))
    
+   # Latenz berechnen und zurückgeben.
     latency = {
         "first_audio_latency_ms": elapsed_ms(
             timing["first_output_audio"], timing["input_start"]
@@ -203,10 +206,11 @@ def translate(audio_path: Path, output_path: Path, target_language: str = "en"):
 '''
 sucht nach der env Datei, liest die Eingabedatei, die Ausgabedatei und die Zielsprache ein.
 ruft die Funktion translate auf und speichert die Transkripte in einer JSON Datei.
-Zeigt Texte und Speicherorte an.
-'''
 
+'''
+# Übersetzt alle Gesprächsbeiträge (Turns) nacheinander.
 def translate_turns(turns, out_dir: Path):
+      # ordner anlegen, falls er noch nicht existiert
     out_dir.mkdir(parents=True, exist_ok=True)
     results = []
 
@@ -215,7 +219,7 @@ def translate_turns(turns, out_dir: Path):
         output_path = out_dir / f"{number:03d}_{speaker}_{target_language}.wav"
 
         print(f"Translating turn {number}: {speaker}")
-
+   # Genau ein Aufruf pro Turn
         source, translation, latency = translate(
             audio_path,
             output_path,
@@ -238,7 +242,7 @@ def translate_turns(turns, out_dir: Path):
 },
         })
       
-
+        # nach jedem turn speichern   
         (out_dir / "conversation.json").write_text(
             json.dumps(results, ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -251,6 +255,7 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Translate WAV turns (24 kHz, mono, PCM16) with OpenAI realtime translation."
     )
+    # --turn für jeden Gesprächsbeitrag, --out für den Ausgabeordner
     parser.add_argument(
         "--turn",
         nargs=3,
@@ -281,7 +286,7 @@ def main():
         turns.append((speaker, audio_path, target_language))
 
     results = translate_turns(turns, args.out)
-
+# Console Ausgaben 
     for turn in results:
         print(f"\n{turn['turn']}. {turn['speaker']}")
         print(f"Original: {turn['source_transcript']}")
