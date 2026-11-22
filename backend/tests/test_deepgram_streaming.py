@@ -1,9 +1,10 @@
+from types import SimpleNamespace
 
 import json
 import queue
 import wave
 
-from backend.app.integrations import i_deepgram_streaming
+from app.integrations import i_deepgram_streaming
 
 
 def test_nur_finalisierte_abschnitte_uebersetzen(
@@ -36,6 +37,7 @@ def test_nur_finalisierte_abschnitte_uebersetzen(
         {
             "type": "Results",
             "is_final": True,
+            "speech_final": False,
             "channel": {
                 "alternatives": [
                     {"transcript": "Guten Tag"}
@@ -80,8 +82,8 @@ def test_nur_finalisierte_abschnitte_uebersetzen(
 
     monkeypatch.setattr(
         i_deepgram_streaming,
-        "translate_text",
-        fake_translate,
+        "DeepLTranslator",
+        lambda: SimpleNamespace(translate=fake_translate, close=lambda: None),
     )
 
     result = i_deepgram_streaming.transcribe_streaming(
@@ -93,6 +95,8 @@ def test_nur_finalisierte_abschnitte_uebersetzen(
     assert len(result["interim_results"]) == 1
     assert len(result["final_results"]) == 1
 
+    # Low-latency policy translates stable text before an utterance ends.
+    assert result["final_results"][0]["speech_final"] is False
     assert translated_texts == ["Guten Tag"]
 
     assert result["translation_results"][0][
