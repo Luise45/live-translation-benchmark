@@ -1,0 +1,9 @@
+Metadata-Version: 2.4
+Name: live-translation-benchmark
+Version: 0.1.0
+Summary: Benchmark for live speech translation models
+Requires-Python: >=3.11
+Requires-Dist: python-dotenv>=1.2.4
+Requires-Dist: scipy>=1.17.1
+Requires-Dist: websocket-client>=1.9.2
+Requires-Dist: websockets>=17.3
