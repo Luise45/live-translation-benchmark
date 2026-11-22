@@ -224,7 +224,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "deepl", specifier = ">=1.0,<2.0" },
+    { name = "deepl", specifier = ">=1.33.0,<2.0" },
     { name = "numpy", specifier = ">=2.0,<3.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.3.9" },
     { name = "python-dotenv", specifier = ">=1.2.4" },
@@ -234,7 +234,7 @@ requires-dist = [
 ]
 
 [package.metadata.requires-dev]
-dev = [{ name = "pytest" }]
+dev = [{ name = "pytest", specifier = ">=9.0,<10.0" }]
 
 [[package]]
 name = "numpy"

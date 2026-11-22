@@ -3,8 +3,8 @@
 Deepgram Nova-3 als STT-Benchmark-Kandidat.
 """
 
-from backend.app.core.models import StageResult
-from backend.app.integrations.i_deepgram import transcribe_wav
+from app.core.models import StageResult
+from app.integrations.i_deepgram import transcribe_wav
 
 
 class DeepgramSTT:

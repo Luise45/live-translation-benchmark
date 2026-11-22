@@ -9,12 +9,12 @@ import time
 from dataclasses import asdict
 from pathlib import Path
 
-from backend.app.candidates.c_deepgram import DeepgramSTT
-from backend.app.core.models import BenchmarkResult, StageResult
-from backend.app.integrations.i_deepl import (
+from app.candidates.c_deepgram import DeepgramSTT
+from app.core.models import BenchmarkResult, StageResult
+from app.integrations.i_deepl import (
     translate_text as translate_text_deepl
 )
-from backend.app.integrations.i_elevenlabs import synthesize_mp3
+from app.integrations.i_elevenlabs import synthesize_mp3
 
 
 # Verfügbare Modelle für die Kaskade

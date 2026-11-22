@@ -14,9 +14,12 @@ import threading
 import time
 import wave
 from pathlib import Path
+from queue import Queue
 from urllib.parse import urlencode
 
 import websocket
+
+from app.integrations.i_deepl import DeepLTranslator
 
 
 DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen"
@@ -42,6 +45,7 @@ def to_mono(pcm_data: bytes, channels: int) -> bytes:
 def transcribe_streaming(
     audio_path: str,
     output_path: str = "results/streaming/deepgram_stt.json",
+    target_lang: str = "EN-US",
 ) -> dict:
     """Streamt eine WAV-Datei an Deepgram und speichert das Ergebnis."""
 
@@ -95,13 +99,69 @@ def transcribe_streaming(
     sender_done = threading.Event()
     sender_errors = []
     sender_finished_at = [0.0]
+    audio_finished_at = [None]
 
     interim_results = []
     final_results = []
+
+    translation_results = []
+    translation_errors = []
+    translation_queue = Queue()
+
     metadata = {}
     stats = {"chunks_sent": 0}
 
     started = time.perf_counter()
+
+    # DeepL-Worker: Sprachabschnitte übersetzen
+    def translate_worker():
+        """Übersetzt finale Sprachabschnitte mit DeepL."""
+
+        translator = DeepLTranslator()
+        try:
+            while True:
+                segment = translation_queue.get()
+
+                try:
+                    if segment is None:
+                        break
+
+                    translation_started = time.perf_counter()
+
+                    translated_text = translator.translate(
+                        segment["text"],
+                        target_lang=target_lang,
+                    )
+
+                    translation_duration = (
+                        time.perf_counter() - translation_started
+                    )
+
+                    translation_results.append({
+                        "segment_id": segment["segment_id"],
+                        "original_text": segment["text"],
+                        "translated_text": translated_text,
+                        "translation_seconds": round(
+                            translation_duration, 3
+                        ),
+                        "completed_at_seconds": round(
+                            time.perf_counter() - started, 3
+                        ),
+                    })
+
+                    print("[DEEPL]", translated_text)
+
+                except Exception as error:
+                    translation_errors.append({
+                        "segment_id": segment["segment_id"],
+                        "error": str(error),
+                    })
+                    print("[DEEPL ERROR]", error)
+
+                finally:
+                    translation_queue.task_done()
+        finally:
+            translator.close()
 
     # 3. Audiodaten in Echtzeit senden
     def send_audio():
@@ -135,6 +195,10 @@ def transcribe_streaming(
 
                     ws.send_binary(chunk)
                     stats["chunks_sent"] += 1
+                    if frames_sent >= round(duration * sample_rate):
+                       audio_finished_at[0] = round(
+                           time.perf_counter() - started, 3
+                       )
 
             if not stop.is_set():
                 ws.send(json.dumps({"type": "CloseStream"}))
@@ -148,6 +212,14 @@ def transcribe_streaming(
             sender_finished_at[0] = time.monotonic()
             sender_done.set()
 
+    # DeepL-Worker starten
+    translator = threading.Thread(
+        target=translate_worker,
+        daemon=True,
+    )
+    translator.start()
+
+    # Audioübertragung starten
     sender = threading.Thread(target=send_audio, daemon=True)
     sender.start()
 
@@ -219,15 +291,30 @@ def transcribe_streaming(
                 time.perf_counter() - started, 3
             )
 
+            
             if event.get("is_final", False):
-                final_results.append({
+                segment_id = len(final_results) + 1
+
+                segment = {
+                    "segment_id": segment_id,
                     "text": text,
                     "start": event.get("start"),
                     "duration": event.get("duration"),
                     "speech_final": event.get("speech_final", False),
                     "received_at_seconds": received_at,
-                })
+                }
+
+                final_results.append(segment)
+
+                # Low-latency policy: translate each stable is_final segment now.
+                # speech_final marks a detected pause, not necessarily a sentence.
+                # Waiting and concatenating until speech_final preserves more
+                # utterance context, but delays translation. Here partial sentences
+                # are intentional; speech_final is retained for later evaluation.
+                translation_queue.put(segment)
+
                 print("[FINAL]", text)
+
 
             else:
                 interim_results.append({
@@ -240,6 +327,21 @@ def transcribe_streaming(
         stop.set()
         ws.close()
         sender.join(timeout=5)
+
+        translation_queue.put(None)
+
+        translator.join(timeout=30)
+
+        if translator.is_alive():
+            raise TimeoutError(
+                "DeepL-Worker wurde nicht innerhalb "
+                "von 30 Sekunden beendet."
+            )
+
+    if translation_errors:
+        raise RuntimeError(
+            f"DeepL-Übersetzung fehlgeschlagen: {translation_errors}"
+        )
 
     if sender_errors:
         raise RuntimeError(
@@ -265,11 +367,16 @@ def transcribe_streaming(
         "stream_channels": 1,
         "sample_rate": sample_rate,
         "audio_duration_seconds": round(duration, 3),
+        "audio_finished_at_seconds": audio_finished_at[0],
         "chunk_ms": CHUNK_MS,
         "chunks_sent": stats["chunks_sent"],
         "interim_results": interim_results,
         "final_results": final_results,
         "transcript": transcript,
+        "translation_provider": "deepl",
+        "target_language": target_lang,
+        "translation_results": translation_results,
+        "translated_segments": len(translation_results),
         "total_elapsed_seconds": round(
             time.perf_counter() - started, 3
         ),
@@ -304,10 +411,19 @@ def main():
         help="Pfad zur Ergebnisdatei",
     )
 
+    parser.add_argument(
+        "--target-lang",
+        default="EN-US",
+        help="DeepL-Zielsprache, z. B. EN-US, FR oder ES",
+    )
     args = parser.parse_args()
 
     try:
-        transcribe_streaming(args.audio, args.output)
+       transcribe_streaming(
+           args.audio,
+           args.output,
+           target_lang=args.target_lang,
+        )
     except (
         OSError,
         ValueError,

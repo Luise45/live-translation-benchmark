@@ -1,3 +1,4 @@
+
 [project]
 name = "live-translation-benchmark"
 version = "0.1.0"
@@ -5,8 +6,10 @@ description = "Benchmark for live speech translation models"
 requires-python = ">=3.11"
 
 dependencies = [
-    "deepl>=1.0,<2.0",
+    # Per-client timeout_s and max_retries require the supported 1.33 SDK.
+    "deepl>=1.33.0,<2.0",
     "numpy>=2.0,<3.0",
+    # PostgreSQL driver for Supabase; binary includes native dependencies.
     "psycopg[binary]>=3.3.9",
     "python-dotenv>=1.2.4",
     "scipy>=1.17.1",
@@ -16,8 +19,9 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "pytest",
+    "pytest>=9.0,<10.0",
 ]
 
 [tool.pytest.ini_options]
+# Canonical package: app; this directory is the backend import root.
 pythonpath = ["."]
