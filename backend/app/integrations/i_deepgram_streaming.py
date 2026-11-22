@@ -19,7 +19,7 @@ from urllib.parse import urlencode
 
 import websocket
 
-from backend.app.integrations.i_deepl import translate_text
+from app.integrations.i_deepl import DeepLTranslator
 
 
 DEEPGRAM_URL = "wss://api.deepgram.com/v1/listen"
@@ -117,47 +117,51 @@ def transcribe_streaming(
     def translate_worker():
         """Übersetzt finale Sprachabschnitte mit DeepL."""
 
-        while True:
-            segment = translation_queue.get()
+        translator = DeepLTranslator()
+        try:
+            while True:
+                segment = translation_queue.get()
 
-            try:
-                if segment is None:
-                    break
+                try:
+                    if segment is None:
+                        break
 
-                translation_started = time.perf_counter()
+                    translation_started = time.perf_counter()
 
-                translated_text = translate_text(
-                    segment["text"],
-                    target_lang=target_lang,
-                )
+                    translated_text = translator.translate(
+                        segment["text"],
+                        target_lang=target_lang,
+                    )
 
-                translation_duration = (
-                    time.perf_counter() - translation_started
-                )
+                    translation_duration = (
+                        time.perf_counter() - translation_started
+                    )
 
-                translation_results.append({
-                    "segment_id": segment["segment_id"],
-                    "original_text": segment["text"],
-                    "translated_text": translated_text,
-                    "translation_seconds": round(
-                        translation_duration, 3
-                    ),
-                    "completed_at_seconds": round(
-                        time.perf_counter() - started, 3
-                    ),
-                })
+                    translation_results.append({
+                        "segment_id": segment["segment_id"],
+                        "original_text": segment["text"],
+                        "translated_text": translated_text,
+                        "translation_seconds": round(
+                            translation_duration, 3
+                        ),
+                        "completed_at_seconds": round(
+                            time.perf_counter() - started, 3
+                        ),
+                    })
 
-                print("[DEEPL]", translated_text)
+                    print("[DEEPL]", translated_text)
 
-            except Exception as error:
-                translation_errors.append({
-                    "segment_id": segment["segment_id"],
-                    "error": str(error),
-                })
-                print("[DEEPL ERROR]", error)
+                except Exception as error:
+                    translation_errors.append({
+                        "segment_id": segment["segment_id"],
+                        "error": str(error),
+                    })
+                    print("[DEEPL ERROR]", error)
 
-            finally:
-                translation_queue.task_done()
+                finally:
+                    translation_queue.task_done()
+        finally:
+            translator.close()
 
     # 3. Audiodaten in Echtzeit senden
     def send_audio():
@@ -302,7 +306,11 @@ def transcribe_streaming(
 
                 final_results.append(segment)
 
-                # Abschnitt an den DeepL-Worker übergeben
+                # Low-latency policy: translate each stable is_final segment now.
+                # speech_final marks a detected pause, not necessarily a sentence.
+                # Waiting and concatenating until speech_final preserves more
+                # utterance context, but delays translation. Here partial sentences
+                # are intentional; speech_final is retained for later evaluation.
                 translation_queue.put(segment)
 
                 print("[FINAL]", text)
