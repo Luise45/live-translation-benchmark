@@ -1,10 +1,11 @@
+from types import SimpleNamespace
 
 import json
 import queue
 import time
 import wave
 
-from backend.app.integrations import i_deepgram_streaming
+from app.integrations import i_deepgram_streaming
 
 
 def test_uebersetzung_waehrend_audio(monkeypatch, tmp_path):
@@ -86,10 +87,17 @@ def test_uebersetzung_waehrend_audio(monkeypatch, tmp_path):
 
         return "How are you?"
 
+    lifecycle = []
+
+    def create_translator():
+        lifecycle.append("created")
+        return SimpleNamespace(
+            translate=fake_translate,
+            close=lambda: lifecycle.append("closed"),
+        )
+
     monkeypatch.setattr(
-        i_deepgram_streaming,
-        "translate_text",
-        fake_translate,
+        i_deepgram_streaming, "DeepLTranslator", create_translator
     )
 
     result = i_deepgram_streaming.transcribe_streaming(
@@ -97,6 +105,8 @@ def test_uebersetzung_waehrend_audio(monkeypatch, tmp_path):
         output_path=str(tmp_path / "result.json"),
         target_lang="EN-US",
     )
+
+    assert lifecycle == ["created", "closed"]
 
     segments = result["final_results"]
     translations = result["translation_results"]
