@@ -1,6 +1,406 @@
-<section>
-  <h1>Benchmark Run</h1>
-  <p>
-    Benchmarks konfigurieren, starten und Ergebnisse analysieren.
-  </p>
+
+<section class="runs-page">
+
+  <header class="runs-page-header">
+    <h1>Benchmark Run</h1>
+    <p>Benchmarks konfigurieren, starten und Ergebnisse analysieren.</p>
+  </header>
+
+  <!-- benchmark konfiguration -->
+  <details class="configuration-panel" open>
+
+    <summary class="configuration-toggle">
+      <span class="configuration-heading">
+        <svg
+          class="configuration-heading-icon"
+          viewBox="0 0 24 24"
+          aria-hidden="true"
+        >
+          <path d="M4 7h9"></path>
+          <path d="M17 7h3"></path>
+          <circle cx="15" cy="7" r="2"></circle>
+          <path d="M4 17h2"></path>
+          <path d="M10 17h10"></path>
+          <circle cx="8" cy="17" r="2"></circle>
+        </svg>
+
+        <span>Benchmark-Konfiguration</span>
+      </span>
+
+      <svg
+        class="collapse-chevron"
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+      >
+        <path d="m6 9 6 6 6-6"></path>
+      </svg>
+    </summary>
+
+    <div class="configuration-content">
+
+      <!-- 1. Kandidaten auswählen -->
+      <div class="selection-heading">
+        <h3>1. Candidates auswählen</h3>
+
+        <span class="selection-counter">
+          {{ selectedCandidateIds.length }}
+          von {{ availableCandidates.length }} ausgewählt
+        </span>
+      </div>
+
+      <!-- suche, filter, aktionen -->
+      <div class="candidate-toolbar">
+
+        <!-- kandidatensuche -->
+        <label class="candidate-search">
+          <span class="visually-hidden">Kandidaten suchen</span>
+
+          <svg
+            class="candidate-search-icon"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <circle cx="11" cy="11" r="7"></circle>
+            <path d="M20 20l-4-4"></path>
+          </svg>
+
+          <input
+            #candidateSearchInput
+            type="search"
+            placeholder="Kandidaten suchen ..."
+            [value]="candidateSearchText"
+            (input)="updateCandidateSearch(candidateSearchInput.value)"
+          />
+        </label>
+
+        <!-- architekturtyp dropdown z.b S2S -->
+        <details
+          class="configuration-dropdown"
+          #architectureDropdown
+        >
+          <summary class="configuration-dropdown-toggle">
+            <span>Architekturtyp: {{ selectedArchitecture }}</span>
+
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m6 9 6 6 6-6"></path>
+            </svg>
+          </summary>
+
+          <div
+            class="configuration-dropdown-options"
+            role="group"
+            aria-label="Architekturtypen"
+          >
+            @for (
+              architecture of availableArchitectureTypes;
+              track architecture
+            ) {
+              <button
+                type="button"
+                class="configuration-dropdown-option"
+                [class.selected]="selectedArchitecture === architecture"
+                [attr.aria-pressed]="selectedArchitecture === architecture"
+                (click)="updateArchitectureFilter(architecture); architectureDropdown.open = false"
+              >
+                <span>{{ architecture }}</span>
+
+                @if (selectedArchitecture === architecture) {
+                  <svg viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="m5 12 4 4L19 6"></path>
+                  </svg>
+                }
+              </button>
+            }
+          </div>
+        </details>
+
+        <!-- auswahlaktionen -->
+        <button
+          type="button"
+          class="secondary-button"
+          (click)="selectAllFilteredCandidates()"
+        >
+          Alle auswählen
+        </button>
+
+        <button
+          type="button"
+          class="secondary-button"
+          (click)="clearCandidateSelection()"
+        >
+          Auswahl zurücksetzen
+        </button>
+
+        <!-- ansicht der provide -->
+        <div
+          class="view-switch"
+          role="group"
+          aria-label="Kandidatenansicht auswählen"
+        >
+
+          <!-- aarussellansicht -->
+          <button
+            type="button"
+            class="view-switch-button"
+            [class.active]="candidateView === 'carousel'"
+            [attr.aria-pressed]="candidateView === 'carousel'"
+            (click)="changeCandidateView('carousel')"
+            aria-label="Karussellansicht"
+            title="Karussellansicht"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="2" y="5" width="5" height="14" rx="1"></rect>
+              <rect x="9.5" y="5" width="5" height="14" rx="1"></rect>
+              <rect x="17" y="5" width="5" height="14" rx="1"></rect>
+            </svg>
+          </button>
+
+          <!-- kachelübersicht -->
+          <button
+            type="button"
+            class="view-switch-button"
+            [class.active]="candidateView === 'grid'"
+            [attr.aria-pressed]="candidateView === 'grid'"
+            (click)="changeCandidateView('grid')"
+            aria-label="Kachelübersicht"
+            title="Kachelübersicht"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="3" y="3" width="7" height="7" rx="1"></rect>
+              <rect x="14" y="3" width="7" height="7" rx="1"></rect>
+              <rect x="3" y="14" width="7" height="7" rx="1"></rect>
+              <rect x="14" y="14" width="7" height="7" rx="1"></rect>
+            </svg>
+          </button>
+
+        </div>
+      </div>
+
+      <!-- provider karten -->
+      <div
+        class="candidate-display"
+        [class.carousel-layout]="candidateView === 'carousel'"
+      >
+
+        <!-- karussell zurück -->
+        @if (candidateView === 'carousel') {
+          <button
+            type="button"
+            class="carousel-arrow"
+            [disabled]="!canMoveCarouselBack"
+            (click)="moveCarousel(-1)"
+            aria-label="Vorherige Kandidaten anzeigen"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m15 18-6-6 6-6"></path>
+            </svg>
+          </button>
+        }
+
+        <!-- kandidatenliste -->
+        <div
+          class="candidate-list"
+          [class.carousel-view]="candidateView === 'carousel'"
+          [class.grid-view]="candidateView === 'grid'"
+        >
+          @for (candidate of visibleCandidates; track candidate.id) {
+            <label
+              class="candidate-card"
+              [class.selected]="isCandidateSelected(candidate.id)"
+            >
+              <input
+                type="checkbox"
+                [checked]="isCandidateSelected(candidate.id)"
+                (change)="toggleCandidateSelection(candidate.id)"
+              />
+
+              <span
+                class="candidate-symbol"
+                aria-hidden="true"
+              >
+                {{ candidate.symbol }}
+              </span>
+
+              <span class="candidate-information">
+                <strong>{{ candidate.providerName }}</strong>
+
+                <span class="candidate-model">
+                  {{ candidate.modelName }}
+                </span>
+
+                <span class="architecture-label">
+                  {{ candidate.architecture }}
+                </span>
+              </span>
+            </label>
+          } @empty {
+            <p class="no-candidates">
+              Keine passenden Kandidaten gefunden.
+            </p>
+          }
+        </div>
+
+        <!-- karussell weiter -->
+        @if (candidateView === 'carousel') {
+          <button
+            type="button"
+            class="carousel-arrow"
+            [disabled]="!canMoveCarouselForward"
+            (click)="moveCarousel(1)"
+            aria-label="Nächste Kandidaten anzeigen"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m9 18 6-6-6-6"></path>
+            </svg>
+          </button>
+        }
+      </div>
+
+      <!-- paginator umblättern seite 1von2 -->
+      @if (candidateView === 'grid' && gridPageCount > 1) {
+        <nav
+          class="candidate-pagination"
+          aria-label="Kandidatenseiten"
+        >
+          <button
+            type="button"
+            class="pagination-button"
+            [disabled]="currentGridPage === 1"
+            (click)="changeGridPage(-1)"
+            aria-label="Vorherige Kandidatenseite"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m15 18-6-6 6-6"></path>
+            </svg>
+          </button>
+
+          <span class="pagination-current-page">
+            Seite {{ currentGridPage }} von {{ gridPageCount }}
+          </span>
+
+          <button
+            type="button"
+            class="pagination-button"
+            [disabled]="currentGridPage === gridPageCount"
+            (click)="changeGridPage(1)"
+            aria-label="Nächste Kandidatenseite"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="m9 18 6-6-6-6"></path>
+            </svg>
+          </button>
+        </nav>
+      }
+
+      <!-- sprachen, testsets, run starten -->
+      <div class="configuration-bottom-row">
+
+        <!-- 2. Sprachen -->
+        <div class="language-selection">
+          <h3>2. Sprachen</h3>
+
+          <details class="configuration-dropdown language-dropdown">
+            <summary
+              class="configuration-dropdown-toggle language-dropdown-toggle"
+            >
+              <span class="language-summary-chips">
+                @for (
+                  direction of selectedLanguageDirections;
+                  track direction
+                ) {
+                  <span class="language-chip">
+                    {{ direction }}
+                  </span>
+                } @empty {
+                  <span>Keine Sprachen verfügbar</span>
+                }
+              </span>
+
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m6 9 6 6 6-6"></path>
+              </svg>
+            </summary>
+
+            <!-- sprachen anzeigen -->
+            <div class="configuration-dropdown-options language-dropdown-options">
+              @for (
+                direction of selectedLanguageDirections;
+                track direction
+              ) {
+                <div class="language-dropdown-option">
+                  {{ direction }}
+                </div>
+              } @empty {
+                <p>Keine Sprachen verfügbar.</p>
+              }
+            </div>
+          </details>
+        </div>
+
+        <!-- 3. Testsets -->
+        <div class="testset-selection">
+          <h3>3. Testsets</h3>
+
+          <details
+            class="configuration-dropdown"
+            #testsetDropdown
+          >
+            <summary class="configuration-dropdown-toggle">
+              <span>{{ selectedTestsetName }}</span>
+
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="m6 9 6 6 6-6"></path>
+              </svg>
+            </summary>
+
+            <div
+              class="configuration-dropdown-options"
+              role="group"
+              aria-label="Verfügbare Testsets"
+            >
+              @for (
+                testset of availableTestsets;
+                track testset.id
+              ) {
+                <button
+                  type="button"
+                  class="configuration-dropdown-option"
+                  [class.selected]="selectedTestsetId === testset.id"
+                  [attr.aria-pressed]="selectedTestsetId === testset.id"
+                  (click)="selectedTestsetId = testset.id; testsetDropdown.open = false"
+                >
+                  <span>{{ testset.name }}</span>
+
+                  @if (selectedTestsetId === testset.id) {
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="m5 12 4 4L19 6"></path>
+                    </svg>
+                  }
+                </button>
+              }
+            </div>
+          </details>
+        </div>
+
+        <!-- run button -->
+        <button
+          type="button"
+          class="primary-button start-run-button"
+          disabled
+          title="Benchmark-Ausführung wird später implementiert"
+        >
+          <svg
+            class="start-run-icon"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path d="m8 5 11 7-11 7V5Z"></path>
+          </svg>
+
+          Run starten
+        </button>
+
+      </div>
+    </div>
+  </details>
 </section>

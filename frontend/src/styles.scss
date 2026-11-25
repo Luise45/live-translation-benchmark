@@ -1,11 +1,70 @@
+:root {
+  --font-family-text: 'Inter Variable', Arial, sans-serif;
+  --font-family-display: 'Inter Variable', Arial, sans-serif;
+
+  --font-size-h1: 48px;
+  --font-size-h2: 33px;
+  --font-size-h3: 23px;
+
+  --color-text: #172542;
+  --color-secondary-text: #64748b;
+  --color-background: #f8fafc;
+  --color-primary: #2459ec;
+  --color-primary-hover: #192fba;
+  --color-border: #dce5f3;
+}
+
 * {
   box-sizing: border-box;
 }
 
+html {
+  font-family: var(--font-family-text);
+  font-optical-sizing: auto;
+  color: var(--color-text);
+}
+
 body {
   margin: 0;
-  background-color: #f8fafc;
-  color: #0f172a;
+  min-width: 320px;
+  background-color: var(--color-background);
+  font-size: 14px;
+  line-height: 1.5;
+}
 
-  font-family: Arial, Helvetica, sans-serif;
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-family-display);
+  font-optical-sizing: auto;
+  font-weight: 750;
+  line-height: 1.15;
+  letter-spacing: -0.03em;
+}
+
+h1 {
+  font-size: var(--font-size-h1);
+}
+
+h2 {
+  font-size: var(--font-size-h2);
+}
+
+h3 {
+  font-size: var(--font-size-h3);
+}
+
+@media (max-width: 700px) {
+  :root {
+    --font-size-h1: 36px;
+    --font-size-h2: 27px;
+    --font-size-h3: 20px;
+  }
 }
