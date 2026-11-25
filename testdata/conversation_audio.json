@@ -1,0 +1,25 @@
+{
+  "sample_rate": 24000,
+  "channels": 1,
+  "format": "pcm16",
+  "duration_seconds": 20.69333333333333,
+  "tracks": [
+    {
+      "source": "C:\\Users\\luise\\Downloads\\eng test.m4a",
+      "file": "C:\\Users\\luise\\Desktop\\backend\\live-translation-benchmark\\testdata\\conversation_en_24k.wav",
+      "language": "en",
+      "original_frames": 424960,
+      "original_duration_seconds": 17.706666666666667,
+      "end_padding_seconds": 2.986666666666667
+    },
+    {
+      "source": "C:\\Users\\luise\\Downloads\\de test.m4a",
+      "file": "C:\\Users\\luise\\Desktop\\backend\\live-translation-benchmark\\testdata\\conversation_de_24k.wav",
+      "language": "de",
+      "original_frames": 496640,
+      "original_duration_seconds": 20.69333333333333,
+      "end_padding_seconds": 0.0
+    }
+  ],
+  "note": "Original pauses retained; conversational alignment not verified."
+}

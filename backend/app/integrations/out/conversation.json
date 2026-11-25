@@ -1,0 +1,78 @@
+[
+  {
+    "turn": 1,
+    "speaker": "customer",
+    "input_file": "audio\\de_kunde_t1_24k.wav",
+    "output_file": "out\\001_customer_en.wav",
+    "target_language": "en",
+    "source_transcript": " Hallo, guten Tag. Ich habe ein Problem mit meinem Vertrag. Ich kann meine Kundennummer dort nicht finden. Mein Name ist Laura Neumann.",
+    "translated_transcript": "Hello, good day. I have a problemwith my contract. I can't find my customer number there. Um, my name is Laura Hüllmann.",
+    "metrics": {
+      "latency": {
+        "first_audio_latency_ms": 598.74,
+        "completion_lag_ms": -11015.84,
+        "input_duration_seconds": 11.605
+      },
+      "translation_accuracy": null,
+      "critical_information": null,
+      "terminology": null
+    }
+  },
+  {
+    "turn": 2,
+    "speaker": "agent",
+    "input_file": "audio\\eng_sup_turn1_24k.wav",
+    "output_file": "out\\002_agent_de.wav",
+    "target_language": "de",
+    "source_transcript": " Hello Laura, um let me quickly check your contract, then I can help you find your customer number. I see, your customer number is here at the bottom of the contract. It is five two",
+    "translated_transcript": "Hallo, Freunde, ich prüfe kurz Ihren Vertrag, dann kann ich Ihnen helfen, Ihre Kundennummer zu finden. Ich sehe, Ihre Kundennummer steht hier unten am Vertrag, in fünf, zwei, acht, acht.",
+    "metrics": {
+      "latency": {
+        "first_audio_latency_ms": 748.04,
+        "completion_lag_ms": -13838.33,
+        "input_duration_seconds": 14.571
+      },
+      "translation_accuracy": null,
+      "critical_information": null,
+      "terminology": null
+    }
+  },
+  {
+    "turn": 3,
+    "speaker": "customer",
+    "input_file": "audio\\de_kunde_t2_24k.wav",
+    "output_file": "out\\003_customer_en.wav",
+    "target_language": "en",
+    "source_transcript": " Danke für die Information. Ähm, noch eine Frage, ist es möglich, sich mit der Kundennummer im Online-Portal anzumelden?",
+    "translated_transcript": "A big thank-you from my side, and one more question: is it possibleto register with the customer number in the online portal?",
+    "metrics": {
+      "latency": {
+        "first_audio_latency_ms": 590.8,
+        "completion_lag_ms": -9596.5,
+        "input_duration_seconds": 10.176
+      },
+      "translation_accuracy": null,
+      "critical_information": null,
+      "terminology": null
+    }
+  },
+  {
+    "turn": 4,
+    "speaker": "agent",
+    "input_file": "audio\\eng_sup_t2_24k.wav",
+    "output_file": "out\\004_agent_de.wav",
+    "target_language": "de",
+    "source_transcript": " Yes, you can use a customer number to sign up or log in in the portal, but you can also use your email address or phone number.",
+    "translated_transcript": "Ja, Sie können einen Vertriebsmitarbeiter auffordern, sich anzumelden oder einzuloggen, aber Sie können auch nur mit einer E-Mail-Adresse oder einer Telefonnummer fortfahren.",
+    "metrics": {
+      "latency": {
+        "first_audio_latency_ms": 633.46,
+        "completion_lag_ms": -8459.11,
+        "input_duration_seconds": 9.088
+      },
+      "translation_accuracy": null,
+      "critical_information": null,
+      "terminology": null
+    }
+  }
+]
