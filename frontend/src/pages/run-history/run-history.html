@@ -1,4 +1,1020 @@
-<section>
-  <h1>Run History</h1>
-  <p>Übersicht der bisherigen Benchmark-Durchläufe.</p>
+<section class="run-history-page">
+  <!-- aufklapp run-historie -->
+  <details class="table-card history-accordion" open>
+    <summary class="history-accordion-summary">
+      <span class="history-heading">
+        <span class="history-heading-icon" aria-hidden="true">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.9"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path
+              d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"
+            ></path>
+            <path d="M3 3v5h5"></path>
+            <path d="M12 7v5l4 2"></path>
+          </svg>
+        </span>
+
+        <span class="history-heading-text">
+          <span
+            class="history-heading-title"
+            role="heading"
+            aria-level="1"
+          >
+            Run-Historie
+          </span>
+
+          <span class="history-heading-description">
+            Übersicht aller beendeten Benchmark-Runs mit Konfiguration,
+            Status und Ergebnissen.
+          </span>
+        </span>
+      </span>
+
+      <svg
+        class="history-collapse-chevron"
+        viewBox="0 0 24 24"
+        aria-hidden="true"
+      >
+        <path
+          d="m6 9 6 6 6-6"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="1.9"
+          stroke-linecap="round"
+          stroke-linejoin="round"
+        ></path>
+      </svg>
+    </summary>
+
+    <div class="history-accordion-content">
+      <!-- suche + filter -->
+      <div class="table-toolbar">
+        <label class="search-input-wrapper">
+          <span class="visually-hidden">Runs suchen</span>
+
+          <svg
+            class="search-input-icon"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <circle cx="11" cy="11" r="6.5"></circle>
+            <path d="M16.2 16.2 21 21"></path>
+          </svg>
+
+          <input
+            #searchField
+            type="search"
+            placeholder="Runs suchen ..."
+            [value]="searchText"
+            (input)="updateSearch(searchField.value)"
+          />
+        </label>
+
+        <!-- filter -->
+        <div class="filter-menu-container">
+          <button
+            type="button"
+            class="secondary-button filter-button"
+            [class.active]="isFilterPanelOpen"
+            [attr.aria-expanded]="isFilterPanelOpen"
+            aria-controls="run-history-filter-panel"
+            (click)="
+              isFilterPanelOpen
+                ? closeFilterPanel()
+                : openFilterPanel()
+            "
+          >
+            <svg
+              class="button-icon"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                d="M4 6h16M7 12h10M10 18h4"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.9"
+                stroke-linecap="round"
+              ></path>
+            </svg>
+
+            <span>Filter</span>
+
+            <svg
+              class="button-chevron"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                d="m7 10 5 5 5-5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.9"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              ></path>
+            </svg>
+          </button>
+
+          <!-- filter geöffnet -->
+          <div
+            class="filter-panel-backdrop"
+            id="run-history-filter-panel"
+            *ngIf="isFilterPanelOpen"
+          >
+            <div class="filter-panel">
+              <button
+                type="button"
+                class="filter-panel-close-button"
+                (click)="closeFilterPanel()"
+                aria-label="Filter schließen"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path
+                    d="M6 6 18 18M18 6 6 18"
+                    fill="none"
+                    stroke="currentColor"
+                    stroke-width="1.9"
+                    stroke-linecap="round"
+                  ></path>
+                </svg>
+              </button>
+
+              <div class="filter-panel-grid">
+                <div class="filter-section">
+                  <h3>Run-Nummer sortieren</h3>
+
+                  <div class="filter-choice-list">
+                    <button
+                      type="button"
+                      class="filter-choice-button"
+                      [class.selected]="
+                        isDraftSortOrderSelected('descending')
+                      "
+                      [attr.aria-pressed]="
+                        isDraftSortOrderSelected('descending')
+                      "
+                      (click)="selectDraftSortOrder('descending')"
+                    >
+                      Absteigend
+                    </button>
+
+                    <button
+                      type="button"
+                      class="filter-choice-button"
+                      [class.selected]="
+                        isDraftSortOrderSelected('ascending')
+                      "
+                      [attr.aria-pressed]="
+                        isDraftSortOrderSelected('ascending')
+                      "
+                      (click)="selectDraftSortOrder('ascending')"
+                    >
+                      Aufsteigend
+                    </button>
+                  </div>
+                </div>
+
+                <div class="filter-section">
+                  <div class="filter-section-header">
+                    <h3>Status</h3>
+
+                    <span class="hover-help">
+                      <button
+                        type="button"
+                        class="hover-help-trigger"
+                        aria-label="Hinweis zum Statusfilter"
+                      >
+                        ?
+                      </button>
+
+                      <span class="hover-help-content" role="tooltip">
+                        Keine Auswahl bedeutet: alle Status.
+                      </span>
+                    </span>
+                  </div>
+
+                  <div class="filter-choice-list">
+                    <button
+                      type="button"
+                      class="filter-choice-button status-choice-button"
+                      [class.selected]="
+                        isDraftStatusSelected('completed')
+                      "
+                      [attr.aria-pressed]="
+                        isDraftStatusSelected('completed')
+                      "
+                      (click)="toggleDraftStatus('completed')"
+                    >
+                      <span
+                        class="status-choice-indicator"
+                        aria-hidden="true"
+                      ></span>
+
+                      <span>Abgeschlossen</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      class="filter-choice-button status-choice-button"
+                      [class.selected]="
+                        isDraftStatusSelected('failed')
+                      "
+                      [attr.aria-pressed]="
+                        isDraftStatusSelected('failed')
+                      "
+                      (click)="toggleDraftStatus('failed')"
+                    >
+                      <span
+                        class="status-choice-indicator"
+                        aria-hidden="true"
+                      ></span>
+
+                      <span>Fehlgeschlagen</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div class="filter-section filter-section-full-width">
+                  <h3>Zeitraum</h3>
+
+                  <div class="filter-choice-list filter-choice-list-period">
+                    <button
+                      type="button"
+                      class="filter-choice-button"
+                      [class.selected]="isDraftPeriodSelected('all')"
+                      [attr.aria-pressed]="isDraftPeriodSelected('all')"
+                      (click)="selectDraftPeriod('all')"
+                    >
+                      Alle
+                    </button>
+
+                    <button
+                      type="button"
+                      class="filter-choice-button"
+                      [class.selected]="isDraftPeriodSelected('7-days')"
+                      [attr.aria-pressed]="
+                        isDraftPeriodSelected('7-days')
+                      "
+                      (click)="selectDraftPeriod('7-days')"
+                    >
+                      Letzte 7 Tage
+                    </button>
+
+                    <button
+                      type="button"
+                      class="filter-choice-button"
+                      [class.selected]="isDraftPeriodSelected('30-days')"
+                      [attr.aria-pressed]="
+                        isDraftPeriodSelected('30-days')
+                      "
+                      (click)="selectDraftPeriod('30-days')"
+                    >
+                      Letzte 30 Tage
+                    </button>
+
+                    <button
+                      type="button"
+                      class="filter-choice-button"
+                      [class.selected]="isDraftPeriodSelected('custom')"
+                      [attr.aria-pressed]="
+                        isDraftPeriodSelected('custom')
+                      "
+                      (click)="selectDraftPeriod('custom')"
+                    >
+                      Eigener Zeitraum
+                    </button>
+                  </div>
+
+                  <div
+                    class="custom-date-range"
+                    *ngIf="draftFilters.period === 'custom'"
+                  >
+                    <label class="date-input-wrapper">
+                      <span>Von</span>
+
+                      <input
+                        type="date"
+                        [(ngModel)]="draftFilters.customStart"
+                      />
+                    </label>
+
+                    <label class="date-input-wrapper">
+                      <span>Bis</span>
+
+                      <input
+                        type="date"
+                        [(ngModel)]="draftFilters.customEnd"
+                      />
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div class="filter-panel-actions">
+                <button
+                  type="button"
+                  class="secondary-button"
+                  (click)="closeFilterPanel()"
+                >
+                  Abbrechen
+                </button>
+
+                <button
+                  type="button"
+                  class="primary-button"
+                  (click)="applyFilters()"
+                >
+                  Anwenden
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- filter zurücksetzen -->
+        <button
+          type="button"
+          class="secondary-button reset-button"
+          (click)="resetAllFilters()"
+        >
+          <svg
+            class="button-icon"
+            viewBox="0 0 24 24"
+            aria-hidden="true"
+          >
+            <path
+              d="M4.5 9.5A8 8 0 1 1 6 16.8"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.9"
+              stroke-linecap="round"
+            ></path>
+            <path
+              d="M4.5 4.5v5h5"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="1.9"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            ></path>
+          </svg>
+
+          <span>Filter zurücksetzen</span>
+        </button>
+      </div>
+
+      <!-- tabelle -->
+      <div class="run-table-wrapper">
+        <table class="run-table">
+          <thead>
+            <tr>
+              <th scope="col">Run</th>
+              <th scope="col">Datum</th>
+              <th scope="col">Status</th>
+              <th scope="col">Testsets</th>
+              <th scope="col">Sprachen</th>
+              <th scope="col">Candidates</th>
+              <th scope="col">Aktion</th>
+            </tr>
+          </thead>
+
+          <tbody>
+            <tr *ngFor="let run of visibleRuns; trackBy: trackRunById">
+              <td class="run-id-cell">
+                {{ formatRunId(run.id) }}
+              </td>
+
+              <td>{{ run.finishedAtLabel }}</td>
+
+              <td>
+                <span
+                  class="status-pill"
+                  [ngClass]="getStatusClass(run.status)"
+                >
+                  <svg
+                    class="status-pill-icon"
+                    viewBox="0 0 24 24"
+                    aria-hidden="true"
+                  >
+                    <path
+                      [attr.d]="getStatusIconPath(run.status)"
+                    ></path>
+                  </svg>
+
+                  <span>{{ getStatusLabel(run.status) }}</span>
+                </span>
+              </td>
+
+              <!-- testsets -->
+              <td>
+                <div class="table-cell-stack">
+                  <span
+                    *ngFor="
+                      let visibleTestset of getVisibleTestsets(run.testsets)
+                    "
+                  >
+                    {{ visibleTestset }}
+                  </span>
+
+                  <span
+                    class="hover-list-trigger"
+                    *ngIf="getHiddenTestsets(run.testsets).length > 0"
+                  >
+                    +{{ getHiddenTestsets(run.testsets).length }} weitere
+
+                    <span class="hover-list-card">
+                      <ul>
+                        <li
+                          *ngFor="
+                            let hiddenTestset of getHiddenTestsets(run.testsets)
+                          "
+                        >
+                          {{ hiddenTestset }}
+                        </li>
+                      </ul>
+                    </span>
+                  </span>
+                </div>
+              </td>
+
+              <!-- sprachen -->
+              <td>
+                <div class="chip-list">
+                  <span
+                    class="small-chip"
+                    *ngFor="
+                      let language of getVisibleLanguages(run.languages)
+                    "
+                  >
+                    {{ language }}
+                  </span>
+
+                  <span
+                    class="hover-list-trigger"
+                    *ngIf="getHiddenLanguages(run.languages).length > 0"
+                  >
+                    +{{ getHiddenLanguages(run.languages).length }} weitere
+
+                    <span class="hover-list-card">
+                      <ul>
+                        <li
+                          *ngFor="
+                            let hiddenLanguage of getHiddenLanguages(run.languages)
+                          "
+                        >
+                          {{ hiddenLanguage }}
+                        </li>
+                      </ul>
+                    </span>
+                  </span>
+                </div>
+              </td>
+
+              <!-- Candidates -->
+              <td>
+                <div class="chip-list">
+                  <span
+                    class="small-chip"
+                    *ngFor="
+                      let candidateName of getVisibleCandidateNames(run)
+                    "
+                  >
+                    {{ candidateName }}
+                  </span>
+
+                  <span
+                    class="hover-list-trigger"
+                    *ngIf="getHiddenCandidateNames(run).length > 0"
+                  >
+                    +{{ getHiddenCandidateNames(run).length }} weitere
+
+                    <span class="hover-list-card">
+                      <ul>
+                        <li
+                          *ngFor="
+                            let hiddenCandidateName of getHiddenCandidateNames(run)
+                          "
+                        >
+                          {{ hiddenCandidateName }}
+                        </li>
+                      </ul>
+                    </span>
+                  </span>
+                </div>
+              </td>
+
+              <!-- details -->
+              <td>
+                <button
+                  type="button"
+                  class="details-button"
+                  [attr.aria-expanded]="expandedRunId === run.id"
+                  (click)="toggleRunDetails(run.id)"
+                >
+                  {{
+                    expandedRunId === run.id
+                      ? 'Schließen'
+                      : 'Details'
+                  }}
+                </button>
+              </td>
+            </tr>
+
+            <tr *ngIf="visibleRuns.length === 0">
+              <td class="empty-state-cell" colspan="7">
+                Keine Runs für die aktuelle Suche oder Filterauswahl
+                gefunden.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Paginator -->
+      <div class="table-footer">
+        <div class="pagination-spacer"></div>
+
+        <nav class="pagination" aria-label="Seitennavigation">
+          <button
+            type="button"
+            class="pagination-button"
+            [disabled]="currentPage === 1"
+            (click)="goToPreviousPage()"
+            aria-label="Vorherige Seite"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="m14.5 6.5-5 5 5 5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.9"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              ></path>
+            </svg>
+          </button>
+
+          <button
+            type="button"
+            class="pagination-page-button"
+            *ngFor="
+              let pageNumber of pageNumbers;
+              trackBy: trackPageByNumber
+            "
+            [class.active]="pageNumber === currentPage"
+            (click)="selectPage(pageNumber)"
+          >
+            {{ pageNumber }}
+          </button>
+
+          <button
+            type="button"
+            class="pagination-button"
+            [disabled]="currentPage === totalPageCount"
+            (click)="goToNextPage()"
+            aria-label="Nächste Seite"
+          >
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="m9.5 6.5 5 5-5 5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.9"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              ></path>
+            </svg>
+          </button>
+        </nav>
+
+        <div class="page-size-select-group">
+          <label for="entriesPerPage">
+            Einträge pro Seite
+          </label>
+
+          <div class="select-wrapper page-size-select-wrapper">
+            <select
+              id="entriesPerPage"
+              [value]="entriesPerPage"
+              (change)="
+                updateEntriesPerPage($any($event.target).value)
+              "
+            >
+              <option
+                *ngFor="
+                  let entryCount of entriesPerPageOptions
+                "
+                [value]="entryCount"
+              >
+                {{ entryCount }}
+              </option>
+            </select>
+
+            <svg
+              class="select-chevron"
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+            >
+              <path
+                d="m7 10 5 5 5-5"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="1.9"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              ></path>
+            </svg>
+          </div>
+        </div>
+      </div>
+    </div>
+  </details>
+
+  <!-- run ergebnisse -->
+  <section
+    #detailSection
+    class="detail-card"
+    *ngIf="selectedRun as run"
+  >
+    <div class="detail-card-header">
+      <div>
+        <h2>Ergebnisse – Run {{ formatRunId(run.id) }}</h2>
+
+        <p>
+          {{ run.finishedAtLabel }}
+          <span>·</span>
+          {{ run.candidates.length }} Candidates
+          <span>·</span>
+          {{ run.testsets.length }} Testsets
+        </p>
+      </div>
+
+      <button
+        type="button"
+        class="detail-close-button"
+        (click)="closeRunDetails()"
+        aria-label="Detailbereich schließen"
+      >
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path
+            d="M6 6 18 18M18 6 6 18"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.9"
+            stroke-linecap="round"
+          ></path>
+        </svg>
+      </button>
+    </div>
+
+    <div class="detail-tab-list">
+      <button
+        type="button"
+        class="detail-tab-button"
+        [class.active]="activeDetailsTab === 'overview'"
+        (click)="selectDetailsTab('overview')"
+      >
+        Übersicht &amp; Diagnostics
+      </button>
+
+      <button
+        type="button"
+        class="detail-tab-button"
+        [class.active]="activeDetailsTab === 'testcases'"
+        (click)="selectDetailsTab('testcases')"
+      >
+        Testfälle
+      </button>
+    </div>
+
+    <!-- Übersicht + diagnostics -->
+    <div
+      *ngIf="activeDetailsTab === 'overview'"
+      class="detail-tab-content"
+    >
+      <section class="detail-section">
+
+        <div class="candidate-comparison-table-wrapper">
+          <table class="candidate-comparison-table">
+            <thead>
+              <tr>
+                <th scope="col" class="candidate-column">
+                  Candidate
+                </th>
+
+                <th scope="col" class="metric-header-cell">
+                  <span class="metric-header-label">
+                    Coverage
+
+                    <span class="hover-help inline-help">
+                      <button
+                        type="button"
+                        class="hover-help-trigger small"
+                        aria-label="Coverage erklären"
+                      >
+                        i
+                      </button>
+
+                      <span class="hover-help-content small" role="tooltip">
+                        Anteil unterstützter verpflichtender
+                        Sprachrichtungen. Partial Coverage ist erlaubt.
+                      </span>
+                    </span>
+                  </span>
+                </th>
+
+                <th scope="col" class="metric-header-cell">
+                  <span class="metric-header-label">
+                    Overall Score
+
+                    <span class="hover-help inline-help">
+                      <button
+                        type="button"
+                        class="hover-help-trigger small"
+                        aria-label="Overall Score erklären"
+                      >
+                        i
+                      </button>
+
+                      <span class="hover-help-content small" role="tooltip">
+                        Gewichteter Gesamtscore eines Candidates bei
+                        vollständiger Coverage und gültigen Core Scores.
+                      </span>
+                    </span>
+                  </span>
+                </th>
+
+                <th scope="col" class="metric-header-cell">
+                  Accuracy
+                </th>
+
+                <th scope="col" class="metric-header-cell">
+                  Critical Info
+                </th>
+
+                <th scope="col" class="metric-header-cell">
+                  Latency
+                </th>
+
+                <th scope="col" class="metric-header-cell">
+                  Robustness
+                </th>
+
+                <th scope="col" class="metric-header-cell">
+                  Reliability
+                </th>
+              </tr>
+            </thead>
+
+            <tbody>
+              <tr
+                *ngFor="
+                  let candidate of run.candidates;
+                  trackBy: trackCandidateById
+                "
+                [class.selected]="isCandidateSelected(candidate.id)"
+                (click)="selectCandidate(candidate.id)"
+              >
+                <td class="candidate-column">
+                  <label class="candidate-selection-label">
+                    <input
+                      type="radio"
+                      name="selectedCandidate"
+                      [checked]="isCandidateSelected(candidate.id)"
+                      (change)="selectCandidate(candidate.id)"
+                    />
+
+                    <span class="candidate-name-block">
+                      <strong>{{ candidate.name }}</strong>
+                      <small>{{ candidate.modelName }}</small>
+                    </span>
+                  </label>
+                </td>
+
+                <td class="centered-cell">
+                  <span
+                    class="coverage-badge"
+                    [class.partial]="
+                      candidate.coverageSupported <
+                      candidate.coverageRequired
+                    "
+                  >
+                    {{ getCoverageLabel(candidate) }}
+                  </span>
+                </td>
+
+                <td class="centered-cell">
+                  <div class="overall-score-cell">
+                    <strong
+                      *ngIf="candidate.overallScore !== null"
+                    >
+                      {{ candidate.overallScore.toFixed(1) }}
+                    </strong>
+
+                    <ng-container
+                      *ngIf="candidate.overallScore === null"
+                    >
+                      <strong>–</strong>
+                      <small>{{ candidate.overallScoreNote }}</small>
+                    </ng-container>
+                  </div>
+                </td>
+
+                <td class="centered-cell">
+                  {{ getMetricValue(candidate.scores.accuracy) }}
+                </td>
+
+                <td class="centered-cell">
+                  {{ getMetricValue(candidate.scores.criticalInfo) }}
+                </td>
+
+                <td class="centered-cell">
+                  {{ getMetricValue(candidate.scores.latency) }}
+                </td>
+
+                <td class="centered-cell">
+                  {{ getMetricValue(candidate.scores.robustness) }}
+                </td>
+
+                <td class="centered-cell">
+                  {{ getMetricValue(candidate.scores.reliability) }}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Candidate spezifische diagnostics -->
+      <section
+        class="detail-section"
+        *ngIf="selectedDetailsCandidate as candidate"
+      >
+        <div class="detail-section-heading">
+          <h3>Diagnostics – {{ candidate.name }}</h3>
+          <p>
+            {{ candidate.modelName }} · {{ candidate.architecture }}
+          </p>
+        </div>
+
+        <div class="diagnostic-group-grid">
+          <article
+            class="diagnostic-group-card"
+            *ngFor="
+              let diagnosticGroup of candidate.diagnosticGroups
+            "
+          >
+            <h4>{{ diagnosticGroup.title }}</h4>
+
+            <div class="diagnostic-item-grid">
+              <div
+                class="diagnostic-item-card"
+                *ngFor="
+                  let diagnosticItem of diagnosticGroup.items
+                "
+              >
+                <span class="diagnostic-item-label">
+                  {{ diagnosticItem.label }}
+                </span>
+
+                <strong
+                  class="diagnostic-item-value"
+                  [class.missing]="diagnosticItem.isMissing"
+                >
+                  {{ diagnosticItem.value }}
+                </strong>
+              </div>
+            </div>
+          </article>
+        </div>
+      </section>
+    </div>
+
+    <!-- testfälle -->
+    <div
+      *ngIf="activeDetailsTab === 'testcases'"
+      class="detail-tab-content"
+    >
+      <section
+        class="detail-section"
+        *ngIf="selectedDetailsCandidate as candidate"
+      >
+        <div class="detail-section-heading">
+          <h3>Testfälle</h3>
+
+          <p>
+            Ausgewählter Candidate:
+            <strong>
+              {{ candidate.name }} – {{ candidate.modelName }}
+            </strong>
+          </p>
+        </div>
+
+        <div class="testset-group-list">
+          <section
+            class="testset-group-card"
+            *ngFor="
+              let testsetGroup of candidate.testsetGroups
+            "
+          >
+            <h4>{{ testsetGroup.name }}</h4>
+
+            <div class="test-case-list">
+              <details
+                class="test-case-card"
+                *ngFor="
+                  let testCase of testsetGroup.testCases
+                "
+              >
+                <summary class="test-case-summary">
+                  <span>{{ testCase.title }}</span>
+                  <span class="small-chip">
+                    {{ testCase.language }}
+                  </span>
+                </summary>
+
+                <div class="test-case-content">
+                  <article
+                    class="test-variation-card"
+                    *ngFor="
+                      let variation of testCase.variations
+                    "
+                  >
+                    <div class="test-variation-header">
+                      <div>
+                        <h5>{{ variation.name }}</h5>
+
+                        <span class="variation-status">
+                          {{ variation.technicalStatus }}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div class="variation-summary-grid">
+                      <div
+                        class="variation-summary-item"
+                        *ngFor="
+                          let summaryValue of variation.summaryValues
+                        "
+                      >
+                        <span>{{ summaryValue.label }}</span>
+                        <strong>{{ summaryValue.value }}</strong>
+                      </div>
+                    </div>
+
+                    <div class="repeat-measurement-list">
+                      <details
+                        class="repeat-measurement-card"
+                        *ngFor="
+                          let repeatMeasurement of
+                            variation.repeatMeasurements
+                        "
+                      >
+                        <summary class="repeat-measurement-summary">
+                          <span>{{ repeatMeasurement.label }}</span>
+                          <span>
+                            {{ repeatMeasurement.technicalStatus }}
+                          </span>
+                        </summary>
+
+                        <div class="repeat-measurement-content">
+                          <div class="variation-summary-grid">
+                            <div
+                              class="variation-summary-item"
+                              *ngFor="
+                                let rawValue of
+                                  repeatMeasurement.rawValues
+                              "
+                            >
+                              <span>{{ rawValue.label }}</span>
+                              <strong>{{ rawValue.value }}</strong>
+                            </div>
+                          </div>
+
+                          <p
+                            class="error-reason"
+                            *ngIf="repeatMeasurement.errorReason"
+                          >
+                            Fehlerursache:
+                            {{ repeatMeasurement.errorReason }}
+                          </p>
+                        </div>
+                      </details>
+                    </div>
+                  </article>
+                </div>
+              </details>
+            </div>
+          </section>
+        </div>
+      </section>
+    </div>
+  </section>
 </section>
